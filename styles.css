@@ -15,3 +15,9 @@ body.monitor .app-header,body.monitor .toolbar,body.monitor .bottom-nav,body.mon
 @media(max-width:440px){.app-header{display:block}.header-actions{margin-top:8px;justify-content:flex-start}.toolbar{grid-template-columns:1fr}.toolbar input,.toolbar select,.summary{grid-column:1}.status-row{grid-template-columns:34px 1fr}.status-row .status-state{grid-column:2}.status-row .status-sub{display:none}}
 
 @media(max-width:620px){dialog.profile-modal{width:calc(100vw - 16px);max-width:calc(100vw - 16px)}dialog.profile-modal .dialog-form{padding:14px}.employee-checks{grid-template-columns:1fr}.dialog-actions{flex-wrap:wrap}.dialog-actions button{flex:1 1 120px}}
+
+/* Ver.2.2.2: 大型表示から必ず戻れる固定ボタン */
+.exit-monitor-btn{display:none;position:fixed;top:16px;right:16px;z-index:3000;border:0;border-radius:12px;padding:12px 18px;background:#173f36;color:#fff;font-weight:800;font-size:15px;box-shadow:0 8px 24px rgba(0,0,0,.22);cursor:pointer}
+.exit-monitor-btn:hover{filter:brightness(1.08)}
+body.monitor .exit-monitor-btn{display:block}
+@media(max-width:640px){.exit-monitor-btn{top:10px;right:10px;padding:10px 13px;font-size:13px}}

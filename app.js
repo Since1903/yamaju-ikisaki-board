@@ -105,4 +105,40 @@ function moveStatus(id,delta){const rows=sortedStatuses(true),i=rows.findIndex(s
 function toggleStatus(id){const s=data.statuses.find(x=>x.id===id);if(!s)return;if(s.active&&data.statuses.filter(x=>x.active).length<=1)return alert('使用中の状態を0件にはできません。');s.active=!s.active;pushHistory('status-master',null,{action:s.active?'再開':'停止',detail:`${s.name} を${s.active?'再開':'停止'}`});save();renderStatusMaster();render()}
 function deleteStatus(id){const s=data.statuses.find(x=>x.id===id);if(!s)return;const usedNow=data.employees.some(e=>e.status===s.name),usedSchedule=data.schedules.some(x=>x.status===s.name);if(usedNow||usedSchedule)return alert(`「${s.name}」は社員の現在状態または予定で使用中のため削除できません。先に別の状態へ変更するか、「停止」を使ってください。`);if(!confirm(`「${s.name}」を完全に削除しますか？\n過去履歴の文字は残ります。`))return;data.statuses=data.statuses.filter(x=>x.id!==id);normalizeStatusOrder();pushHistory('status-master',null,{action:'削除',detail:`${s.name} を削除`});save();renderStatusMaster();render()}
 function autoSwitch(){const now=new Date();let changed=false;const sorted=[...data.schedules].sort((a,b)=>a.startAt.localeCompare(b.startAt));sorted.forEach(s=>{const e=data.employees.find(x=>x.id===s.employeeId);if(!e)return;const start=new Date(s.startAt),end=new Date(s.endAt);if(!s.startDone&&start<=now){s.beforeSnapshot={status:e.status,destination:e.destination,purpose:e.purpose,returnTime:e.returnTime,phone:e.phone,direct:e.direct,goHome:e.goHome,memo:e.memo};const before=e.status,sm=statusByName(s.status);Object.assign(e,{status:s.status,destination:sm.useDestination===false?'':s.destination,purpose:sm.useDestination===false?'':s.purpose,returnTime:sm.useReturn?s.endAt.slice(11,16):'',phone:s.phone,direct:s.direct,goHome:s.goHome,memo:s.memo});s.startDone=true;pushHistory('auto-start',e,{before,after:e.status,destination:e.destination,startLabel:dateFmt(s.startAt),endLabel:dateFmt(s.endAt)});changed=true}if(s.startDone&&!s.endDone&&end<=now){const newer=sorted.find(x=>x.employeeId===s.employeeId&&x.id!==s.id&&new Date(x.startAt)<=now&&now<new Date(x.endAt));const before=e.status;if(!newer){if(s.goHome){Object.assign(e,{status:'外出',returnTime:'',goHome:true})}else if(s.after==='previous'&&s.beforeSnapshot){Object.assign(e,s.beforeSnapshot)}else{const present=statusByName('在席').name==='在席'?'在席':activeStatusNames()[0];const psm=statusByName(present);Object.assign(e,{status:present,destination:psm.defaultDestination||'',purpose:'',returnTime:'',phone:'ok',direct:false,goHome:false,memo:''})}}s.endDone=true;pushHistory('auto-end',e,{before,after:e.status,startLabel:dateFmt(s.startAt),endLabel:dateFmt(s.endAt)});changed=true}});if(changed){save();render()}}
-['searchInput','departmentFilter','occupationFilter','statusFilter'].forEach(id=>$('#'+id).addEventListener(id==='searchInput'?'input':'change',render));document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click',()=>{currentView=b.dataset.view;render()}));$('#monitorBtn').addEventListener('click',()=>document.body.classList.toggle('monitor'));setInterval(autoSwitch,15000);autoSwitch();render();
+
+// ---- Dialog safety controls -------------------------------------------------
+// Every modal must always be closable, even when required fields are empty.
+// This also protects future dialogs from native form validation blocking ×/Cancel.
+function setupDialogSafety(){
+  document.querySelectorAll('dialog').forEach(dialog=>{
+    const form=dialog.querySelector('form');
+    if(form){
+      form.setAttribute('novalidate','');
+      form.addEventListener('submit',ev=>ev.preventDefault());
+    }
+    dialog.querySelectorAll('.icon-btn, button[value="cancel"]').forEach(btn=>{
+      btn.type='button';
+      btn.addEventListener('click',ev=>{
+        ev.preventDefault();
+        ev.stopPropagation();
+        if(dialog.open) dialog.close('cancel');
+      });
+    });
+    // Clicking the dimmed area outside a modal closes only that modal.
+    dialog.addEventListener('click',ev=>{
+      if(ev.target===dialog && dialog.open) dialog.close('cancel');
+    });
+  });
+  // Employee form is the only modal whose values are not overwritten on every open.
+  // Clear unfinished input whenever it is cancelled/closed.
+  const employeeDialog=$('#employeeDialog');
+  employeeDialog?.addEventListener('close',()=>{
+    if(employeeDialog.returnValue==='cancel') $('#employeeForm')?.reset();
+  });
+}
+
+['searchInput','departmentFilter','occupationFilter','statusFilter'].forEach(id=>$('#'+id).addEventListener(id==='searchInput'?'input':'change',render));document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click',()=>{currentView=b.dataset.view;render()}));$('#monitorBtn').addEventListener('click',()=>document.body.classList.add('monitor'));
+$('#exitMonitorBtn').addEventListener('click',()=>document.body.classList.remove('monitor'));
+document.addEventListener('keydown',(e)=>{if(e.key==='Escape'&&document.body.classList.contains('monitor'))document.body.classList.remove('monitor')});
+setupDialogSafety();
+setInterval(autoSwitch,15000);autoSwitch();render();

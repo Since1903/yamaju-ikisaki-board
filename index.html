@@ -5,9 +5,10 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#3a9d74" />
   <title>山十 行先予定表</title>
-  <link rel="stylesheet" href="styles.css?v=2.2.1.0" />
+  <link rel="stylesheet" href="styles.css?v=2.2.2.0" />
 </head>
 <body>
+  <button id="exitMonitorBtn" class="exit-monitor-btn" type="button" aria-label="大型表示を終了">← 通常表示に戻る</button>
   <header class="app-header">
     <div>
       <div class="eyebrow">YAMAJU</div>
@@ -63,7 +64,7 @@
 
   <dialog id="editDialog">
     <form id="editForm" method="dialog" class="dialog-form">
-      <div class="dialog-title"><div><div class="eyebrow">STATUS UPDATE</div><h2 id="editTitle"></h2></div><button value="cancel" class="icon-btn">×</button></div>
+      <div class="dialog-title"><div><div class="eyebrow">STATUS UPDATE</div><h2 id="editTitle"></h2></div><button type="button" value="cancel" class="icon-btn" aria-label="閉じる">×</button></div>
       <input id="editEmployeeId" type="hidden" />
       <label>状態<select id="editStatus"></select></label>
       <label>行先・場所<input id="editDestination" /></label>
@@ -71,13 +72,13 @@
       <div class="two-col"><label>戻り予定<input id="editReturn" type="time" /></label><label>電話<select id="editPhone"><option value="ok">対応可</option><option value="later">折返し</option><option value="ng">対応不可</option></select></label></div>
       <div class="checks"><label><input id="editDirect" type="checkbox" /> 直行</label><label><input id="editGoHome" type="checkbox" /> 直帰</label></div>
       <label>メモ<textarea id="editMemo" rows="3"></textarea></label>
-      <div class="dialog-actions"><button value="cancel" class="secondary">キャンセル</button><button id="saveEditBtn" class="primary">更新</button></div>
+      <div class="dialog-actions"><button type="button" value="cancel" class="secondary">キャンセル</button><button type="button" id="saveEditBtn" class="primary">更新</button></div>
     </form>
   </dialog>
 
   <dialog id="scheduleDialog">
     <form id="scheduleForm" method="dialog" class="dialog-form">
-      <div class="dialog-title"><div><div class="eyebrow">AUTO SWITCH</div><h2>予定を登録</h2></div><button value="cancel" class="icon-btn">×</button></div>
+      <div class="dialog-title"><div><div class="eyebrow">AUTO SWITCH</div><h2>予定を登録</h2></div><button type="button" value="cancel" class="icon-btn" aria-label="閉じる">×</button></div>
       <input id="scheduleId" type="hidden" />
       <label>社員<select id="scheduleEmployee"></select></label>
       <div class="three-col"><label>日付<input id="scheduleDate" type="date" /></label><label>開始<input id="scheduleStart" type="time" /></label><label>終了<input id="scheduleEnd" type="time" /></label></div>
@@ -87,35 +88,35 @@
       <div class="two-col"><label>電話<select id="schedulePhone"><option value="ok">対応可</option><option value="later">折返し</option><option value="ng">対応不可</option></select></label><label>終了後<select id="scheduleAfter"><option value="present">在席・本社へ戻す</option><option value="previous">予定前の状態へ戻す</option></select></label></div>
       <div class="checks"><label><input id="scheduleDirect" type="checkbox" /> 直行</label><label><input id="scheduleGoHome" type="checkbox" /> 直帰</label></div>
       <label>メモ<textarea id="scheduleMemo" rows="2"></textarea></label>
-      <div class="dialog-actions"><button value="cancel" class="secondary">キャンセル</button><button id="saveScheduleBtn" class="primary">登録</button></div>
+      <div class="dialog-actions"><button type="button" value="cancel" class="secondary">キャンセル</button><button type="button" id="saveScheduleBtn" class="primary">登録</button></div>
     </form>
   </dialog>
 
   <dialog id="employeeDialog">
     <form id="employeeForm" method="dialog" class="dialog-form">
-      <div class="dialog-title"><h2>社員追加</h2><button value="cancel" class="icon-btn">×</button></div>
+      <div class="dialog-title"><h2>社員追加</h2><button type="button" value="cancel" class="icon-btn" aria-label="閉じる">×</button></div>
       <label>氏名<input id="newName" required /></label>
       <label>部署<input id="newDepartment" required /></label>
       <label>職種<select id="newOccupation"><option>営業職</option><option>事務職</option><option>現場職</option><option>配送職</option><option>その他</option></select></label>
       <label>役職・補足<input id="newRole" /></label>
-      <div class="dialog-actions"><button value="cancel" class="secondary">キャンセル</button><button id="saveEmployeeBtn" class="primary">追加</button></div>
+      <div class="dialog-actions"><button type="button" value="cancel" class="secondary">キャンセル</button><button type="button" id="saveEmployeeBtn" class="primary">追加</button></div>
     </form>
   </dialog>
 
   <dialog id="profileDialog" class="profile-modal">
     <form method="dialog" class="dialog-form">
-      <div class="dialog-title"><div><div class="eyebrow">MY BOARD</div><h2>表示設定</h2></div><button value="cancel" class="icon-btn">×</button></div>
+      <div class="dialog-title"><div><div class="eyebrow">MY BOARD</div><h2>表示設定</h2></div><button type="button" value="cancel" class="icon-btn" aria-label="閉じる">×</button></div>
       <p class="help">この端末で「自分」と、最初に表示したい社員を設定します。自分は常に左上に固定されます。</p>
       <label>自分<select id="currentUserSelect"></select></label>
       <fieldset><legend>表示する社員</legend><div id="visibleEmployees" class="employee-checks"></div></fieldset>
       <div class="notice">※これは端末ごとの表示設定です。状態の追加・編集・色変更は「管理設定」から行えます。</div>
-      <div class="dialog-actions"><button value="cancel" class="secondary">キャンセル</button><button id="saveProfileBtn" class="primary">保存</button></div>
+      <div class="dialog-actions"><button type="button" value="cancel" class="secondary">キャンセル</button><button type="button" id="saveProfileBtn" class="primary">保存</button></div>
     </form>
   </dialog>
 
   <dialog id="adminDialog" class="wide-modal admin-modal">
     <form method="dialog" class="dialog-form">
-      <div class="dialog-title"><div><div class="eyebrow">MASTER SETTINGS</div><h2>管理設定</h2></div><button value="cancel" class="icon-btn">×</button></div>
+      <div class="dialog-title"><div><div class="eyebrow">MASTER SETTINGS</div><h2>管理設定</h2></div><button type="button" value="cancel" class="icon-btn" aria-label="閉じる">×</button></div>
       <div class="admin-tabs">
         <button type="button" class="admin-tab active" data-admin-view="status">状態管理</button>
       </div>
@@ -130,13 +131,13 @@
         <div id="statusMasterList" class="status-master-list"></div>
         <div class="notice">使用済みの状態は削除せず「停止」にするのがおすすめです。停止した状態は新規選択肢から外れますが、過去履歴は残ります。</div>
       </section>
-      <div class="dialog-actions"><button value="cancel" class="secondary">閉じる</button></div>
+      <div class="dialog-actions"><button type="button" value="cancel" class="secondary">閉じる</button></div>
     </form>
   </dialog>
 
   <dialog id="statusEditDialog">
     <form id="statusEditForm" method="dialog" class="dialog-form">
-      <div class="dialog-title"><div><div class="eyebrow">STATUS MASTER</div><h2 id="statusEditTitle">状態を追加</h2></div><button value="cancel" class="icon-btn">×</button></div>
+      <div class="dialog-title"><div><div class="eyebrow">STATUS MASTER</div><h2 id="statusEditTitle">状態を追加</h2></div><button type="button" value="cancel" class="icon-btn" aria-label="閉じる">×</button></div>
       <input id="statusEditId" type="hidden" />
       <label>状態名<input id="statusEditName" maxlength="20" required /></label>
       <div class="two-col">
@@ -149,10 +150,10 @@
         <label><input id="statusEditUseDestination" type="checkbox" checked /> 行先を使う</label>
       </div>
       <label>初期の行先<input id="statusEditDefaultDestination" placeholder="例：本社" /></label>
-      <div class="dialog-actions"><button value="cancel" class="secondary">キャンセル</button><button id="saveStatusBtn" class="primary">保存</button></div>
+      <div class="dialog-actions"><button type="button" value="cancel" class="secondary">キャンセル</button><button type="button" id="saveStatusBtn" class="primary">保存</button></div>
     </form>
   </dialog>
 
-  <script src="app.js?v=2.2.1.0"></script>
+  <script src="app.js?v=2.2.3.0"></script>
 </body>
 </html>
