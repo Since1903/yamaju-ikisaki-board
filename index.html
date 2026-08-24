@@ -3,36 +3,36 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#2f8f6b" />
+  <meta name="theme-color" content="#3a9d74" />
   <title>山十 行先予定表</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header class="topbar">
+  <header class="app-header">
     <div>
       <div class="eyebrow">YAMAJU</div>
       <h1>山十 行先予定表</h1>
     </div>
-    <div class="top-actions">
-      <button id="monitorBtn" class="ghost">大型表示</button>
+    <div class="header-actions">
+      <button id="profileBtn" class="secondary">表示設定</button>
+      <button id="monitorBtn" class="secondary">大型表示</button>
       <button id="addEmployeeBtn" class="primary">社員追加</button>
     </div>
   </header>
 
-  <main>
+  <main class="shell">
     <section class="toolbar card">
-      <div class="filters">
-        <input id="searchInput" type="search" placeholder="社員名・行先を検索" />
-        <select id="departmentFilter"></select>
-        <select id="statusFilter">
-          <option value="">すべての状態</option>
-          <option>在席</option><option>外出</option><option>現場</option><option>会議</option><option>出張</option><option>休み</option>
-        </select>
-      </div>
-      <div class="summary" id="summary"></div>
+      <input id="searchInput" type="search" placeholder="社員名・行先・用件を検索" />
+      <select id="departmentFilter"><option value="">すべての部署</option></select>
+      <select id="occupationFilter"><option value="">すべての職種</option></select>
+      <select id="statusFilter">
+        <option value="">すべての状態</option>
+        <option>在席</option><option>外出</option><option>会議</option><option>現場</option><option>出張</option><option>休み</option>
+      </select>
+      <span id="summary" class="summary"></span>
     </section>
 
-    <section class="board" id="board"></section>
+    <section id="board" class="board"></section>
   </main>
 
   <nav class="bottom-nav">
@@ -41,71 +41,80 @@
     <button class="nav-btn" data-view="history">履歴</button>
   </nav>
 
-  <dialog id="editDialog">
-    <form method="dialog" id="editForm" class="dialog-form">
-      <div class="dialog-head">
-        <div>
-          <div class="eyebrow">STATUS UPDATE</div>
-          <h2 id="editTitle">行先変更</h2>
-        </div>
-        <button value="cancel" class="icon-btn" aria-label="閉じる">×</button>
-      </div>
-      <input id="editEmployeeId" type="hidden" />
-      <label>状態<select id="editStatus" required><option>在席</option><option>外出</option><option>現場</option><option>会議</option><option>出張</option><option>休み</option></select></label>
-      <label>行先・場所<input id="editDestination" placeholder="例：YKK AP / 第2会議室" /></label>
-      <label>用件<input id="editPurpose" placeholder="例：打合せ / 現調" /></label>
-      <div class="two-col">
-        <label>戻り予定<input id="editReturn" type="time" /></label>
-        <label>電話<select id="editPhone"><option value="ok">対応可</option><option value="later">折返し</option><option value="ng">対応不可</option></select></label>
-      </div>
-      <div class="checks">
-        <label><input id="editDirect" type="checkbox" /> 直行</label>
-        <label><input id="editGoHome" type="checkbox" /> 直帰</label>
-      </div>
-      <label>メモ<textarea id="editMemo" rows="3"></textarea></label>
-      <div class="dialog-actions">
-        <button value="cancel" class="ghost">キャンセル</button>
-        <button id="saveEditBtn" value="default" class="primary">更新</button>
-      </div>
-    </form>
-  </dialog>
-
-  <dialog id="scheduleDialog">
-    <form method="dialog" id="scheduleForm" class="dialog-form">
-      <div class="dialog-head"><div><div class="eyebrow">AUTO SWITCH</div><h2>予定を登録</h2></div><button value="cancel" class="icon-btn">×</button></div>
-      <label>社員<select id="scheduleEmployee"></select></label>
-      <div class="two-col">
-        <label>日付<input id="scheduleDate" type="date" required /></label>
-        <label>開始<input id="scheduleStart" type="time" required /></label>
-      </div>
-      <label>状態<select id="scheduleStatus"><option>在席</option><option>外出</option><option>現場</option><option>会議</option><option>出張</option><option>休み</option></select></label>
-      <label>行先<input id="scheduleDestination" /></label>
-      <label>用件<input id="schedulePurpose" /></label>
-      <label>戻り予定<input id="scheduleReturn" type="time" /></label>
-      <div class="dialog-actions"><button value="cancel" class="ghost">キャンセル</button><button id="saveScheduleBtn" value="default" class="primary">登録</button></div>
-    </form>
-  </dialog>
-
-  <dialog id="employeeDialog">
-    <form method="dialog" id="employeeForm" class="dialog-form">
-      <div class="dialog-head"><div><div class="eyebrow">EMPLOYEE</div><h2>社員追加</h2></div><button value="cancel" class="icon-btn">×</button></div>
-      <label>氏名<input id="newName" required /></label>
-      <label>部署<input id="newDepartment" required placeholder="例：企画課" /></label>
-      <label>役職<input id="newRole" placeholder="例：主任" /></label>
-      <div class="dialog-actions"><button value="cancel" class="ghost">キャンセル</button><button id="saveEmployeeBtn" value="default" class="primary">追加</button></div>
-    </form>
-  </dialog>
-
   <template id="employeeCardTemplate">
     <article class="employee-card card">
-      <div class="card-head"><div><h3 class="employee-name"></h3><p class="employee-meta"></p></div><span class="status-pill"></span></div>
-      <div class="current-line"><span class="label">現在</span><strong class="destination"></strong></div>
-      <div class="purpose"></div>
-      <div class="meta-grid"><div><span>戻り</span><b class="return-time">―</b></div><div><span>電話</span><b class="phone-status">対応可</b></div></div>
+      <div class="card-head">
+        <div>
+          <h2 class="employee-name"></h2>
+          <div class="employee-meta"></div>
+        </div>
+        <span class="status-pill"></span>
+      </div>
+      <div class="employee-main">
+        <div class="line"><span>現在</span><strong class="destination"></strong></div>
+        <div class="purpose"></div>
+      </div>
+      <div class="employee-footer-grid">
+        <div><small>戻り</small><strong class="return-time"></strong></div>
+        <div><small>電話</small><strong class="phone-status"></strong></div>
+      </div>
       <div class="tag-row"></div>
       <button class="change-btn primary">変更</button>
     </article>
   </template>
+
+  <dialog id="editDialog">
+    <form id="editForm" method="dialog" class="dialog-form">
+      <div class="dialog-title"><div><div class="eyebrow">STATUS UPDATE</div><h2 id="editTitle"></h2></div><button value="cancel" class="icon-btn">×</button></div>
+      <input id="editEmployeeId" type="hidden" />
+      <label>状態<select id="editStatus"><option>在席</option><option>外出</option><option>会議</option><option>現場</option><option>出張</option><option>休み</option></select></label>
+      <label>行先・場所<input id="editDestination" /></label>
+      <label>用件<input id="editPurpose" /></label>
+      <div class="two-col"><label>戻り予定<input id="editReturn" type="time" /></label><label>電話<select id="editPhone"><option value="ok">対応可</option><option value="later">折返し</option><option value="ng">対応不可</option></select></label></div>
+      <div class="checks"><label><input id="editDirect" type="checkbox" /> 直行</label><label><input id="editGoHome" type="checkbox" /> 直帰</label></div>
+      <label>メモ<textarea id="editMemo" rows="3"></textarea></label>
+      <div class="dialog-actions"><button value="cancel" class="secondary">キャンセル</button><button id="saveEditBtn" class="primary">更新</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="scheduleDialog">
+    <form id="scheduleForm" method="dialog" class="dialog-form">
+      <div class="dialog-title"><div><div class="eyebrow">AUTO SWITCH</div><h2>予定を登録</h2></div><button value="cancel" class="icon-btn">×</button></div>
+      <input id="scheduleId" type="hidden" />
+      <label>社員<select id="scheduleEmployee"></select></label>
+      <div class="three-col"><label>日付<input id="scheduleDate" type="date" /></label><label>開始<input id="scheduleStart" type="time" /></label><label>終了<input id="scheduleEnd" type="time" /></label></div>
+      <label>状態<select id="scheduleStatus"><option>在席</option><option>外出</option><option>会議</option><option>現場</option><option>出張</option><option>休み</option></select></label>
+      <label>行先<input id="scheduleDestination" /></label>
+      <label>用件<input id="schedulePurpose" /></label>
+      <div class="two-col"><label>電話<select id="schedulePhone"><option value="ok">対応可</option><option value="later">折返し</option><option value="ng">対応不可</option></select></label><label>終了後<select id="scheduleAfter"><option value="present">在席・本社へ戻す</option><option value="previous">予定前の状態へ戻す</option></select></label></div>
+      <div class="checks"><label><input id="scheduleDirect" type="checkbox" /> 直行</label><label><input id="scheduleGoHome" type="checkbox" /> 直帰</label></div>
+      <label>メモ<textarea id="scheduleMemo" rows="2"></textarea></label>
+      <div class="dialog-actions"><button value="cancel" class="secondary">キャンセル</button><button id="saveScheduleBtn" class="primary">登録</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="employeeDialog">
+    <form id="employeeForm" method="dialog" class="dialog-form">
+      <div class="dialog-title"><h2>社員追加</h2><button value="cancel" class="icon-btn">×</button></div>
+      <label>氏名<input id="newName" required /></label>
+      <label>部署<input id="newDepartment" required /></label>
+      <label>職種<select id="newOccupation"><option>営業職</option><option>事務職</option><option>現場職</option><option>配送職</option><option>その他</option></select></label>
+      <label>役職・補足<input id="newRole" /></label>
+      <div class="dialog-actions"><button value="cancel" class="secondary">キャンセル</button><button id="saveEmployeeBtn" class="primary">追加</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="profileDialog">
+    <form method="dialog" class="dialog-form wide-dialog">
+      <div class="dialog-title"><div><div class="eyebrow">MY BOARD</div><h2>表示設定</h2></div><button value="cancel" class="icon-btn">×</button></div>
+      <p class="help">この端末で「自分」と、最初に表示したい社員を設定します。自分は常に左上に固定されます。</p>
+      <label>自分<select id="currentUserSelect"></select></label>
+      <fieldset><legend>表示する社員</legend><div id="visibleEmployees" class="employee-checks"></div></fieldset>
+      <fieldset><legend>状態ごとの色</legend><div id="statusColors" class="color-grid"></div></fieldset>
+      <div class="notice">※これは端末ごとの表示設定です。本物のID・パスワードログインはGitHub Pages単体では安全に実装できないため、認証機能は別段階で追加します。</div>
+      <div class="dialog-actions"><button value="cancel" class="secondary">キャンセル</button><button id="saveProfileBtn" class="primary">保存</button></div>
+    </form>
+  </dialog>
 
   <script src="app.js"></script>
 </body>
