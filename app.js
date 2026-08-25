@@ -1,4 +1,4 @@
-// Ver.3.0 Supabase authentication / shared current status
+// Ver.3.1 Supabase authentication / shared current status / employee administration
 let supabaseClient=null;
 let authSession=null;
 let currentEmployeeProfile=null;
@@ -25,7 +25,7 @@ function showApp(){
 }
 function toEmployeeModel(emp,statusRow){
  return {
-  id:String(emp.id),dbId:Number(emp.id),authUserId:emp.auth_user_id||'',name:emp.name||'',department:emp.department||'',occupation:emp.job_type||'その他',role:emp.role||'',
+  id:String(emp.id),dbId:Number(emp.id),authUserId:emp.auth_user_id||'',name:emp.name||'',department:emp.department||'',occupation:emp.job_type||'',role:emp.role||'',
   status:statusRow?.status||'在席',destination:statusRow?.destination||'本社',purpose:statusRow?.purpose||'',returnTime:(statusRow?.return_time||'').slice(0,5),phone:statusRow?.phone_status||'ok',direct:!!statusRow?.direct_go,goHome:!!statusRow?.direct_return,memo:statusRow?.memo||''
  };
 }
@@ -155,7 +155,7 @@ function renderBoard(board){
  const q=$('#searchInput').value.trim().toLowerCase(),dep=$('#departmentFilter').value,occ=$('#occupationFilter').value,st=$('#statusFilter').value;const base=orderedVisibleEmployees();
  const list=base.filter(e=>(!q||`${e.name} ${e.destination} ${e.purpose}`.toLowerCase().includes(q))&&(!dep||e.department===dep)&&(!occ||e.occupation===occ)&&(!st||e.status===st));
  board.className='board';board.innerHTML='';const t=$('#employeeCardTemplate');
- list.forEach(e=>{const n=t.content.cloneNode(true),card=n.querySelector('.employee-card'),sm=statusByName(e.status),bg=sm.color||'#fff',fg=contrast(bg);card.style.setProperty('--status-bg',bg);card.style.setProperty('--card-text',fg);n.querySelector('.employee-name').textContent=e.name;n.querySelector('.employee-meta').textContent=[e.department,e.occupation,e.role].filter(Boolean).join(' / ');n.querySelector('.status-pill').textContent=e.status;n.querySelector('.destination').textContent=sm.useDestination===false?'―':(e.destination||'―');n.querySelector('.purpose').textContent=e.purpose||' ';const shownReturn=(!sm.useReturn||e.goHome||!e.returnTime||e.returnTime==='00:00')?'―':e.returnTime;n.querySelector('.return-time').textContent=shownReturn;n.querySelector('.phone-status').textContent=phoneText(e.phone);const tags=n.querySelector('.tag-row');if(e.id===data.settings.currentUserId)tags.innerHTML+='<span class="tag">自分</span>';if(e.direct)tags.innerHTML+='<span class="tag">直行</span>';if(e.goHome)tags.innerHTML+='<span class="tag">直帰</span>';if(!sm.active)tags.innerHTML+='<span class="tag">停止中状態</span>';if(e.memo)tags.innerHTML+=`<span class="tag">${esc(e.memo)}</span>`;n.querySelector('.change-btn').addEventListener('click',()=>openEdit(e.id));board.appendChild(n)});
+ list.forEach(e=>{const n=t.content.cloneNode(true),card=n.querySelector('.employee-card'),sm=statusByName(e.status),bg=sm.color||'#fff',fg=contrast(bg);card.style.setProperty('--status-bg',bg);card.style.setProperty('--card-text',fg);n.querySelector('.employee-name').textContent=e.name;n.querySelector('.employee-meta').textContent=[e.department,e.occupation].filter(Boolean).join(' / ');n.querySelector('.status-pill').textContent=e.status;n.querySelector('.destination').textContent=sm.useDestination===false?'―':(e.destination||'―');n.querySelector('.purpose').textContent=e.purpose||' ';const shownReturn=(!sm.useReturn||e.goHome||!e.returnTime||e.returnTime==='00:00')?'―':e.returnTime;n.querySelector('.return-time').textContent=shownReturn;n.querySelector('.phone-status').textContent=phoneText(e.phone);const tags=n.querySelector('.tag-row');if(e.id===data.settings.currentUserId)tags.innerHTML+='<span class="tag">自分</span>';if(e.direct)tags.innerHTML+='<span class="tag">直行</span>';if(e.goHome)tags.innerHTML+='<span class="tag">直帰</span>';if(!sm.active)tags.innerHTML+='<span class="tag">停止中状態</span>';if(e.memo)tags.innerHTML+=`<span class="tag">${esc(e.memo)}</span>`;n.querySelector('.change-btn').addEventListener('click',()=>openEdit(e.id));board.appendChild(n)});
  $('#summary').textContent=`表示 ${list.length}名 / 登録${data.employees.length}名`;if(!list.length)board.innerHTML='<div class="empty card">該当する社員がいません</div>';
 }
 function renderHistory(board){
@@ -174,8 +174,72 @@ $('#saveEditBtn').addEventListener('click',async ev=>{ev.preventDefault();applyE
 function openSchedule(id=''){const s=data.schedules.find(x=>x.id===id),d=new Date();$('#scheduleId').value=id;$('#scheduleDate').value=s?.startAt?.slice(0,10)||d.toISOString().slice(0,10);$('#scheduleStart').value=s?.startAt?.slice(11,16)||'09:00';$('#scheduleEnd').value=s?.endAt?.slice(11,16)||'10:00';$('#scheduleEmployee').value=s?.employeeId||data.settings.currentUserId||data.employees[0]?.id;fillStatusSelect($('#scheduleStatus'),s?.status||activeStatusNames()[0]||'在席',true);$('#scheduleDestination').value=s?.destination||'';$('#schedulePurpose').value=s?.purpose||'';$('#schedulePhone').value=s?.phone||'later';$('#scheduleAfter').value=s?.after||'present';$('#scheduleDirect').checked=!!s?.direct;$('#scheduleGoHome').checked=!!s?.goHome;$('#scheduleMemo').value=s?.memo||'';$('#scheduleDialog').showModal()}
 $('#saveScheduleBtn').addEventListener('click',ev=>{ev.preventDefault();const date=$('#scheduleDate').value,start=$('#scheduleStart').value,end=$('#scheduleEnd').value;if(!date||!start||!end)return alert('開始・終了時刻を入力してください。');if(end<=start)return alert('終了時刻は開始時刻より後にしてください。');const existing=data.schedules.find(x=>x.id===$('#scheduleId').value);const obj={id:existing?.id||crypto.randomUUID(),employeeId:$('#scheduleEmployee').value,startAt:`${date}T${start}:00`,endAt:`${date}T${end}:00`,status:$('#scheduleStatus').value,destination:$('#scheduleDestination').value.trim(),purpose:$('#schedulePurpose').value.trim(),phone:$('#schedulePhone').value,after:$('#scheduleAfter').value,direct:$('#scheduleDirect').checked,goHome:$('#scheduleGoHome').checked,memo:$('#scheduleMemo').value.trim(),startDone:existing?.startDone||false,endDone:existing?.endDone||false,beforeSnapshot:existing?.beforeSnapshot||null};if(existing)Object.assign(existing,obj);else data.schedules.push(obj);const e=data.employees.find(x=>x.id===obj.employeeId);pushHistory('schedule-create',e,{status:obj.status,destination:obj.destination,startLabel:dateFmt(obj.startAt),endLabel:dateFmt(obj.endAt)});save();$('#scheduleDialog').close();render()});
 function deleteSchedule(id){const s=data.schedules.find(x=>x.id===id);if(!s||!confirm('この予定を削除しますか？'))return;const e=data.employees.find(x=>x.id===s.employeeId);pushHistory('schedule-delete',e,{status:s.status,startLabel:dateFmt(s.startAt),endLabel:dateFmt(s.endAt)});data.schedules=data.schedules.filter(x=>x.id!==id);save();render()}
-$('#addEmployeeBtn').addEventListener('click',()=>{if(remoteMode)return alert('Ver.3.0では社員追加はSupabase管理画面から行ってください。');$('#employeeDialog').showModal()});
-$('#saveEmployeeBtn').addEventListener('click',ev=>{ev.preventDefault();const name=$('#newName').value.trim(),department=$('#newDepartment').value.trim();if(!name||!department)return;const initial=statusByName('在席').active?'在席':activeStatusNames()[0]||data.statuses[0]?.name||'在席',sm=statusByName(initial);const e={id:crypto.randomUUID(),name,department,occupation:$('#newOccupation').value,role:$('#newRole').value.trim(),status:initial,destination:sm.defaultDestination||'',purpose:'',returnTime:'',phone:'ok',direct:false,goHome:false,memo:''};data.employees.push(e);data.settings.visibleEmployeeIds.push(e.id);save();$('#employeeDialog').close();$('#employeeForm').reset();render()});
+$('#addEmployeeBtn').addEventListener('click',()=>{if(currentEmployeeProfile?.role==='admin')openEmployeeManage();});
+
+let employeeAdminRows=[];
+function isCurrentAdmin(){return currentEmployeeProfile?.role==='admin'}
+async function employeeAdminCall(action,payload={}){
+ if(!supabaseClient||!authSession)throw new Error('ログイン情報を確認できません。');
+ if(!isCurrentAdmin())throw new Error('管理者のみ実行できます。');
+ const {data:result,error}=await supabaseClient.functions.invoke('manage-employee',{body:{action,...payload}});
+ if(error){
+  let msg=error.message||'社員管理APIの呼び出しに失敗しました。';
+  try{if(error.context){const body=await error.context.clone().json();if(body?.error)msg=body.error;}}catch{}
+  throw new Error(msg);
+ }
+ if(result?.error)throw new Error(result.error);
+ return result||{};
+}
+function loginIdFromEmail(email=''){return String(email).split('@')[0]||''}
+function setEmployeeAdminNotice(message='',isError=false){const n=$('#employeeAdminNotice');if(!n)return;n.hidden=!message;n.textContent=message;n.classList.toggle('error-notice',!!isError)}
+async function refreshEmployeeAdmin(){
+ const list=$('#employeeAdminList');if(!list)return;
+ list.innerHTML='<div class="empty card">社員情報を読み込み中…</div>';setEmployeeAdminNotice();
+ try{
+  const result=await employeeAdminCall('list');employeeAdminRows=result.employees||[];renderEmployeeAdmin();
+ }catch(err){console.error(err);list.innerHTML='';setEmployeeAdminNotice(err.message||'社員情報の取得に失敗しました。',true)}
+}
+function renderEmployeeAdmin(){
+ const list=$('#employeeAdminList');if(!list)return;
+ if(!employeeAdminRows.length){list.innerHTML='<div class="empty card">登録されている社員がいません。</div>';return}
+ list.innerHTML=employeeAdminRows.map(e=>`<article class="employee-admin-row ${e.active?'':'inactive'}">
+   <div class="employee-admin-main"><strong>${esc(e.name||'名称未設定')}</strong><span>${esc(e.email||'')}</span><small>${esc([e.department,e.job_type].filter(Boolean).join(' / ')||'部署・職種未設定')}</small></div>
+   <span class="permission-badge ${e.role==='admin'?'admin':''}">${e.role==='admin'?'管理者':'一般'}</span>
+   <span class="status-state ${e.active?'on':'off'}">${e.active?'有効':'無効'}</span>
+   <div class="employee-admin-actions"><button type="button" class="small-btn secondary edit-employee-admin" data-id="${e.id}">編集</button><button type="button" class="small-btn ${e.active?'secondary':'primary'} toggle-employee-admin" data-id="${e.id}">${e.active?'無効化':'再開'}</button><button type="button" class="small-btn danger delete-employee-admin" data-id="${e.id}">削除</button></div>
+ </article>`).join('');
+ list.querySelectorAll('.edit-employee-admin').forEach(b=>b.addEventListener('click',()=>openEmployeeManage(Number(b.dataset.id))));
+ list.querySelectorAll('.toggle-employee-admin').forEach(b=>b.addEventListener('click',()=>toggleEmployeeAdmin(Number(b.dataset.id))));
+ list.querySelectorAll('.delete-employee-admin').forEach(b=>b.addEventListener('click',()=>deleteEmployeeAdmin(Number(b.dataset.id))));
+}
+function openEmployeeManage(employeeId=null){
+ if(!isCurrentAdmin())return alert('管理者のみ利用できます。');
+ const row=employeeId?employeeAdminRows.find(x=>Number(x.id)===Number(employeeId)):null;
+ $('#employeeForm').reset();$('#employeeManageId').value=row?.id||'';$('#employeeDialogTitle').textContent=row?'社員を修正':'社員を追加';$('#saveEmployeeBtn').textContent=row?'保存':'追加';
+ $('#newLoginId').value=row?loginIdFromEmail(row.email):'';$('#newPassword').value='';$('#newName').value=row?.name||'';$('#newDepartment').value=row?.department||'';$('#newOccupation').value=row?.job_type||'';$('#newAccessRole').value=row?.role||'user';
+ $('#employeeFormHelp').textContent=row?'パスワードは変更する場合のみ入力してください。ログインIDを変更すると認証メールアドレスも更新されます。':'追加すると、認証アカウント・社員情報・初期状態（在席／本社／対応可）をまとめて作成します。';
+ $('#employeeDialog').showModal();
+}
+$('#adminAddEmployeeBtn')?.addEventListener('click',()=>openEmployeeManage());
+$('#saveEmployeeBtn').addEventListener('click',async ev=>{
+ ev.preventDefault();const id=$('#employeeManageId').value,loginId=$('#newLoginId').value.trim().toLowerCase(),password=$('#newPassword').value,name=$('#newName').value.trim(),department=$('#newDepartment').value.trim(),jobType=$('#newOccupation').value.trim(),role=$('#newAccessRole').value;
+ if(!loginId||!name||!department)return alert('ログインID・氏名・部署を入力してください。');
+ if(!id&&password.length<8)return alert('初期パスワードは8文字以上で入力してください。');
+ if(id&&password&&password.length<8)return alert('新しいパスワードは8文字以上で入力してください。');
+ const btn=$('#saveEmployeeBtn');btn.disabled=true;btn.textContent=id?'保存中…':'追加中…';
+ try{
+  const payload={email:loginEmailFromId(loginId),name,department,job_type:jobType||null,role};if(password)payload.password=password;if(id)payload.employee_id=Number(id);
+  await employeeAdminCall(id?'update':'create',payload);$('#employeeDialog').close();await refreshEmployeeAdmin();await loadRemoteEmployees();render();
+ }catch(err){console.error(err);alert(err.message||'社員情報の保存に失敗しました。')}finally{btn.disabled=false;btn.textContent=id?'保存':'追加'}
+});
+async function toggleEmployeeAdmin(id){
+ const row=employeeAdminRows.find(x=>Number(x.id)===Number(id));if(!row)return;const action=row.active?'disable':'enable';const msg=row.active?`${row.name}さんのアカウントを無効化しますか？\n行先板には表示されず、ログインもできなくなります。`:`${row.name}さんのアカウントを再開しますか？`;if(!confirm(msg))return;
+ try{await employeeAdminCall(action,{employee_id:id});await refreshEmployeeAdmin();await loadRemoteEmployees();render()}catch(err){console.error(err);alert(err.message||'アカウント状態の変更に失敗しました。')}
+}
+async function deleteEmployeeAdmin(id){
+ const row=employeeAdminRows.find(x=>Number(x.id)===Number(id));if(!row)return;const typed=prompt(`${row.name}さんを完全に削除します。\n認証アカウント・社員情報・現在状態も削除されます。\n実行する場合は「削除」と入力してください。`);if(typed!=='削除')return;
+ try{await employeeAdminCall('delete',{employee_id:id});await refreshEmployeeAdmin();await loadRemoteEmployees();render()}catch(err){console.error(err);alert(err.message||'社員の削除に失敗しました。')}
+}
 function openProfile(){$('#currentUserSelect').innerHTML=data.employees.map(e=>`<option value="${e.id}">${esc(e.name)}（${esc(e.department)}）</option>`).join('');$('#currentUserSelect').value=data.settings.currentUserId;const vis=new Set(data.settings.visibleEmployeeIds);$('#visibleEmployees').innerHTML=data.employees.map(e=>`<label><input type="checkbox" value="${e.id}" ${vis.has(e.id)?'checked':''}> <span>${esc(e.name)} <small>${esc(e.department)}</small></span></label>`).join('');$('#profileDialog').showModal()}
 $('#profileBtn').addEventListener('click',openProfile);
 $('#saveProfileBtn').addEventListener('click',ev=>{ev.preventDefault();data.settings.currentUserId=$('#currentUserSelect').value;const checked=[...document.querySelectorAll('#visibleEmployees input:checked')].map(x=>x.value);if(!checked.includes(data.settings.currentUserId))checked.unshift(data.settings.currentUserId);data.settings.visibleEmployeeIds=checked;save();$('#profileDialog').close();render()});
@@ -190,8 +254,11 @@ function renderStatusMaster(){
  </div>`).join('');
  wrap.querySelectorAll('.edit-status').forEach(b=>b.addEventListener('click',()=>openStatusEdit(b.dataset.id)));wrap.querySelectorAll('.toggle-status').forEach(b=>b.addEventListener('click',()=>toggleStatus(b.dataset.id)));wrap.querySelectorAll('.delete-status').forEach(b=>b.addEventListener('click',()=>deleteStatus(b.dataset.id)));wrap.querySelectorAll('.status-up').forEach(b=>b.addEventListener('click',()=>moveStatus(b.dataset.id,-1)));wrap.querySelectorAll('.status-down').forEach(b=>b.addEventListener('click',()=>moveStatus(b.dataset.id,1)));
 }
-function openAdmin(){renderStatusMaster();$('#adminDialog').showModal()}
-$('#adminBtn').addEventListener('click',openAdmin);$('#addStatusBtn').addEventListener('click',()=>openStatusEdit());
+function switchAdminView(view){
+ document.querySelectorAll('.admin-tab').forEach(b=>b.classList.toggle('active',b.dataset.adminView===view));$('#statusAdminPanel').hidden=view!=='status';$('#employeeAdminPanel').hidden=view!=='employee';if(view==='employee')refreshEmployeeAdmin();else renderStatusMaster();
+}
+function openAdmin(){switchAdminView('status');$('#adminDialog').showModal()}
+$('#adminBtn').addEventListener('click',openAdmin);$('#addStatusBtn').addEventListener('click',()=>openStatusEdit());document.querySelectorAll('.admin-tab').forEach(b=>b.addEventListener('click',()=>switchAdminView(b.dataset.adminView)));
 function openStatusEdit(id=''){const s=data.statuses.find(x=>x.id===id);$('#statusEditId').value=id;$('#statusEditTitle').textContent=s?'状態を編集':'状態を追加';$('#statusEditName').value=s?.name||'';$('#statusEditColor').value=s?.color||'#31b57b';$('#statusEditOrder').value=s?.order||data.statuses.length+1;$('#statusEditActive').checked=s?.active!==false;$('#statusEditUseReturn').checked=s?.useReturn!==false;$('#statusEditUseDestination').checked=s?.useDestination!==false;$('#statusEditDefaultDestination').value=s?.defaultDestination||'';$('#statusEditDialog').showModal()}
 $('#saveStatusBtn').addEventListener('click',ev=>{ev.preventDefault();const id=$('#statusEditId').value,name=$('#statusEditName').value.trim();if(!name)return alert('状態名を入力してください。');const dup=data.statuses.find(s=>s.name===name&&s.id!==id);if(dup)return alert('同じ状態名がすでにあります。');const existing=data.statuses.find(s=>s.id===id),oldName=existing?.name;const obj={id:existing?.id||crypto.randomUUID(),name,color:$('#statusEditColor').value,active:$('#statusEditActive').checked,order:Number($('#statusEditOrder').value)||data.statuses.length+1,useReturn:$('#statusEditUseReturn').checked,useDestination:$('#statusEditUseDestination').checked,defaultDestination:$('#statusEditDefaultDestination').value.trim()};if(existing){Object.assign(existing,obj);if(oldName!==name){data.employees.forEach(e=>{if(e.status===oldName)e.status=name});data.schedules.forEach(s=>{if(s.status===oldName)s.status=name})}}else data.statuses.push(obj);normalizeStatusOrder();pushHistory('status-master',null,{action:existing?'編集':'追加',detail:existing?`${oldName} → ${name}`:`${name} を追加`});save();$('#statusEditDialog').close();renderStatusMaster();render()});
 function normalizeStatusOrder(){sortedStatuses(true).forEach((s,i)=>s.order=i+1)}

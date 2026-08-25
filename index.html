@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#3a9d74" />
   <title>山十 行先予定表</title>
-  <link rel="stylesheet" href="styles.css?v=3.0.0" />
+  <link rel="stylesheet" href="styles.css?v=3.1.0" />
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -109,13 +109,18 @@
     </form>
   </dialog>
 
-  <dialog id="employeeDialog">
+  <dialog id="employeeDialog" class="employee-manage-modal">
     <form id="employeeForm" method="dialog" class="dialog-form">
-      <div class="dialog-title"><h2>社員追加</h2><button type="button" value="cancel" class="icon-btn" aria-label="閉じる">×</button></div>
+      <div class="dialog-title"><div><div class="eyebrow">EMPLOYEE ACCOUNT</div><h2 id="employeeDialogTitle">社員を追加</h2></div><button type="button" value="cancel" class="icon-btn" aria-label="閉じる">×</button></div>
+      <input id="employeeManageId" type="hidden" />
+      <label>ログインID<input id="newLoginId" autocomplete="off" placeholder="例：yamada" required /></label>
+      <label>パスワード<input id="newPassword" type="password" autocomplete="new-password" placeholder="追加時は必須・修正時は変更する場合のみ入力" /></label>
       <label>氏名<input id="newName" required /></label>
       <label>部署<input id="newDepartment" required /></label>
-      <label>職種<select id="newOccupation"><option>営業職</option><option>事務職</option><option>現場職</option><option>配送職</option><option>その他</option></select></label>
-      <label>役職・補足<input id="newRole" /></label>
+      <label>職種（任意）<input id="newOccupation" list="occupationCandidates" placeholder="例：事務職 / 空欄でも可" /></label>
+      <datalist id="occupationCandidates"><option value="営業職"></option><option value="事務職"></option><option value="現場職"></option><option value="配送職"></option></datalist>
+      <label>権限<select id="newAccessRole"><option value="user">一般ユーザー</option><option value="admin">管理者</option></select></label>
+      <div id="employeeFormHelp" class="notice">追加すると、認証アカウント・社員情報・初期状態（在席／本社／対応可）をまとめて作成します。</div>
       <div class="dialog-actions"><button type="button" value="cancel" class="secondary">キャンセル</button><button type="button" id="saveEmployeeBtn" class="primary">追加</button></div>
     </form>
   </dialog>
@@ -136,8 +141,9 @@
       <div class="dialog-title"><div><div class="eyebrow">MASTER SETTINGS</div><h2>管理設定</h2></div><button type="button" value="cancel" class="icon-btn" aria-label="閉じる">×</button></div>
       <div class="admin-tabs">
         <button type="button" class="admin-tab active" data-admin-view="status">状態管理</button>
+        <button type="button" class="admin-tab" data-admin-view="employee">社員管理</button>
       </div>
-      <section id="statusAdminPanel">
+      <section id="statusAdminPanel" class="admin-panel">
         <div class="section-head">
           <div>
             <h3>状態マスタ</h3>
@@ -147,6 +153,17 @@
         </div>
         <div id="statusMasterList" class="status-master-list"></div>
         <div class="notice">使用済みの状態は削除せず「停止」にするのがおすすめです。停止した状態は新規選択肢から外れますが、過去履歴は残ります。</div>
+      </section>
+      <section id="employeeAdminPanel" class="admin-panel" hidden>
+        <div class="section-head">
+          <div>
+            <h3>社員管理</h3>
+            <p class="help">社員アカウントの追加・修正・無効化・再開・削除を行います。ログインIDと認証アカウントも同時に管理されます。</p>
+          </div>
+          <button type="button" id="adminAddEmployeeBtn" class="primary">＋ 社員を追加</button>
+        </div>
+        <div id="employeeAdminNotice" class="notice" hidden></div>
+        <div id="employeeAdminList" class="employee-admin-list"></div>
       </section>
       <div class="dialog-actions"><button type="button" value="cancel" class="secondary">閉じる</button></div>
     </form>
@@ -173,7 +190,7 @@
 
   </div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="supabase-config.js?v=3.0.0"></script>
-  <script src="app.js?v=3.0.0"></script>
+  <script src="supabase-config.js?v=3.1.0"></script>
+  <script src="app.js?v=3.1.0"></script>
 </body>
 </html>
