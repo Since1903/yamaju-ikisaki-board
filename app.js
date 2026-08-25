@@ -1,9 +1,11 @@
-// Ver.3.1 Supabase authentication / shared current status / employee administration
+// Ver.3.2 Supabase authentication / shared current status / employee + department + job master administration
 let supabaseClient=null;
 let authSession=null;
 let currentEmployeeProfile=null;
 let statusRealtimeChannel=null;
 let remoteMode=false;
+let departmentMasterRows=[];
+let jobTypeMasterRows=[];
 
 function supabaseConfigured(){
  const c=window.YAMAJU_SUPABASE||{};
@@ -28,6 +30,23 @@ function toEmployeeModel(emp,statusRow){
   id:String(emp.id),dbId:Number(emp.id),authUserId:emp.auth_user_id||'',name:emp.name||'',department:emp.department||'',occupation:emp.job_type||'',role:emp.role||'',
   status:statusRow?.status||'在席',destination:statusRow?.destination||'本社',purpose:statusRow?.purpose||'',returnTime:(statusRow?.return_time||'').slice(0,5),phone:statusRow?.phone_status||'ok',direct:!!statusRow?.direct_go,goHome:!!statusRow?.direct_return,memo:statusRow?.memo||''
  };
+}
+async function loadMasterData(){
+ if(!supabaseClient||!authSession)return;
+ const [{data:deps,error:depErr},{data:jobs,error:jobErr}]=await Promise.all([
+  supabaseClient.from('departments').select('id,name,sort_order,active').order('sort_order').order('id'),
+  supabaseClient.from('job_types').select('id,name,sort_order,active').order('sort_order').order('id')
+ ]);
+ if(depErr)throw depErr;if(jobErr)throw jobErr;
+ departmentMasterRows=deps||[];jobTypeMasterRows=jobs||[];
+}
+function activeMasterNames(rows){return rows.filter(r=>r.active!==false).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0)||a.id-b.id).map(r=>r.name)}
+function fillEmployeeMasterSelects(department='',jobType=''){
+ const dep=$('#newDepartment'),job=$('#newOccupation');if(!dep||!job)return;
+ const deps=activeMasterNames(departmentMasterRows);if(department&&!deps.includes(department))deps.push(department);
+ dep.innerHTML='<option value="">選択してください</option>'+deps.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');dep.value=department||'';
+ const jobs=activeMasterNames(jobTypeMasterRows);if(jobType&&!jobs.includes(jobType))jobs.push(jobType);
+ job.innerHTML='<option value="">未設定</option>'+jobs.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');job.value=jobType||'';
 }
 async function loadRemoteEmployees(){
  if(!supabaseClient||!authSession)return;
@@ -69,7 +88,7 @@ function startStatusRealtime(){
 }
 async function handleAuthenticated(session){
  authSession=session;
- try{await loadRemoteEmployees();showApp();render();startStatusRealtime();}
+ try{await loadMasterData();await loadRemoteEmployees();showApp();render();startStatusRealtime();}
  catch(err){console.error(err);await supabaseClient.auth.signOut();showLogin(err.message||'社員情報の取得に失敗しました。');}
 }
 async function bootAuth(){
@@ -144,8 +163,8 @@ function fillStatusSelect(select,value='',includeInactiveCurrent=false){
  select.innerHTML=names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');if(value&&names.includes(value))select.value=value;
 }
 function renderFilters(){
- const d=$('#departmentFilter'),dp=d.value;d.innerHTML='<option value="">すべての部署</option>'+uniq('department').map(x=>`<option>${esc(x)}</option>`).join('');d.value=dp;
- const o=$('#occupationFilter'),op=o.value;o.innerHTML='<option value="">すべての職種</option>'+uniq('occupation').map(x=>`<option>${esc(x)}</option>`).join('');o.value=op;
+ const d=$('#departmentFilter'),dp=d.value;const depNames=[...new Set([...activeMasterNames(departmentMasterRows),...uniq('department')])];d.innerHTML='<option value="">すべての部署</option>'+depNames.map(x=>`<option>${esc(x)}</option>`).join('');d.value=dp;
+ const o=$('#occupationFilter'),op=o.value;const jobNames=[...new Set([...activeMasterNames(jobTypeMasterRows),...uniq('occupation')])];o.innerHTML='<option value="">すべての職種</option>'+jobNames.map(x=>`<option>${esc(x)}</option>`).join('');o.value=op;
  const sf=$('#statusFilter'),sv=sf.value;const filterNames=[...new Set([...sortedStatuses(true).map(s=>s.name),...data.employees.map(e=>e.status)])];sf.innerHTML='<option value="">すべての状態</option>'+filterNames.map(n=>`<option>${esc(n)}</option>`).join('');if(filterNames.includes(sv))sf.value=sv;
  $('#scheduleEmployee').innerHTML=data.employees.map(e=>`<option value="${e.id}">${esc(e.name)}（${esc(e.department)} / ${esc(e.occupation)}）</option>`).join('');
 }
@@ -216,7 +235,7 @@ function openEmployeeManage(employeeId=null){
  if(!isCurrentAdmin())return alert('管理者のみ利用できます。');
  const row=employeeId?employeeAdminRows.find(x=>Number(x.id)===Number(employeeId)):null;
  $('#employeeForm').reset();$('#employeeManageId').value=row?.id||'';$('#employeeDialogTitle').textContent=row?'社員を修正':'社員を追加';$('#saveEmployeeBtn').textContent=row?'保存':'追加';
- $('#newLoginId').value=row?loginIdFromEmail(row.email):'';$('#newPassword').value='';$('#newName').value=row?.name||'';$('#newDepartment').value=row?.department||'';$('#newOccupation').value=row?.job_type||'';$('#newAccessRole').value=row?.role||'user';
+ $('#newLoginId').value=row?loginIdFromEmail(row.email):'';$('#newPassword').value='';$('#newName').value=row?.name||'';fillEmployeeMasterSelects(row?.department||'',row?.job_type||'');$('#newAccessRole').value=row?.role||'user';
  $('#employeeFormHelp').textContent=row?'パスワードは変更する場合のみ入力してください。ログインIDを変更すると認証メールアドレスも更新されます。':'追加すると、認証アカウント・社員情報・初期状態（在席／本社／対応可）をまとめて作成します。';
  $('#employeeDialog').showModal();
 }
@@ -240,6 +259,19 @@ async function deleteEmployeeAdmin(id){
  const row=employeeAdminRows.find(x=>Number(x.id)===Number(id));if(!row)return;const typed=prompt(`${row.name}さんを完全に削除します。\n認証アカウント・社員情報・現在状態も削除されます。\n実行する場合は「削除」と入力してください。`);if(typed!=='削除')return;
  try{await employeeAdminCall('delete',{employee_id:id});await refreshEmployeeAdmin();await loadRemoteEmployees();render()}catch(err){console.error(err);alert(err.message||'社員の削除に失敗しました。')}
 }
+
+function masterConfig(type){return type==='department'?{table:'departments',label:'部署',rows:departmentMasterRows,list:'#departmentMasterList',notice:'#departmentAdminNotice',employeeField:'department'}:{table:'job_types',label:'職種',rows:jobTypeMasterRows,list:'#jobTypeMasterList',notice:'#jobAdminNotice',employeeField:'job_type'}}
+function setMasterNotice(type,message='',isError=false){const n=$(masterConfig(type).notice);if(!n)return;n.hidden=!message;n.textContent=message;n.classList.toggle('error-notice',!!isError)}
+async function refreshMasters(){await loadMasterData();renderMasterAdmin('department');renderMasterAdmin('job');renderFilters();}
+function renderMasterAdmin(type){const c=masterConfig(type),wrap=$(c.list);if(!wrap)return;const rows=[...c.rows].sort((a,b)=>(a.sort_order||0)-(b.sort_order||0)||a.id-b.id);if(!rows.length){wrap.innerHTML=`<div class="empty card">${c.label}が登録されていません。</div>`;return;}wrap.innerHTML=rows.map((r,i)=>`<article class="master-row ${r.active?'':'inactive'}"><div class="master-main"><strong>${esc(r.name)}</strong><small>並び順 ${i+1}</small></div><span class="status-state ${r.active?'on':'off'}">${r.active?'使用中':'停止'}</span><div class="master-move"><button type="button" class="small-btn secondary master-up" data-type="${type}" data-id="${r.id}" ${i===0?'disabled':''}>↑</button><button type="button" class="small-btn secondary master-down" data-type="${type}" data-id="${r.id}" ${i===rows.length-1?'disabled':''}>↓</button></div><div class="master-actions"><button type="button" class="small-btn secondary master-edit" data-type="${type}" data-id="${r.id}">編集</button><button type="button" class="small-btn ${r.active?'secondary':'primary'} master-toggle" data-type="${type}" data-id="${r.id}">${r.active?'停止':'再開'}</button><button type="button" class="small-btn danger master-delete" data-type="${type}" data-id="${r.id}">削除</button></div></article>`).join('');wrap.querySelectorAll('.master-edit').forEach(b=>b.addEventListener('click',()=>openMasterEdit(b.dataset.type,Number(b.dataset.id))));wrap.querySelectorAll('.master-toggle').forEach(b=>b.addEventListener('click',()=>toggleMaster(b.dataset.type,Number(b.dataset.id))));wrap.querySelectorAll('.master-delete').forEach(b=>b.addEventListener('click',()=>deleteMaster(b.dataset.type,Number(b.dataset.id))));wrap.querySelectorAll('.master-up').forEach(b=>b.addEventListener('click',()=>moveMaster(b.dataset.type,Number(b.dataset.id),-1)));wrap.querySelectorAll('.master-down').forEach(b=>b.addEventListener('click',()=>moveMaster(b.dataset.type,Number(b.dataset.id),1)));}
+function openMasterEdit(type,id=null){if(!isCurrentAdmin())return alert('管理者のみ利用できます。');const c=masterConfig(type),row=id?c.rows.find(r=>Number(r.id)===Number(id)):null;$('#masterEditType').value=type;$('#masterEditId').value=row?.id||'';$('#masterEditTitle').textContent=row?`${c.label}を編集`:`${c.label}を追加`;$('#masterEditName').value=row?.name||'';$('#masterEditOrder').value=row?.sort_order||c.rows.length+1;$('#masterEditActive').checked=row?.active!==false;$('#masterEditDialog').showModal();}
+async function propagateMasterRename(type,oldName,newName){if(oldName===newName)return;const result=await employeeAdminCall('list');const field=masterConfig(type).employeeField;const targets=(result.employees||[]).filter(e=>(e[field]||'')===oldName);for(const e of targets){await employeeAdminCall('update',{employee_id:Number(e.id),email:e.email,name:e.name,department:type==='department'?newName:e.department,job_type:type==='job'?newName:(e.job_type||null),role:e.role||'user'});} }
+$('#saveMasterBtn')?.addEventListener('click',async ev=>{ev.preventDefault();const type=$('#masterEditType').value,c=masterConfig(type),id=Number($('#masterEditId').value)||null,name=$('#masterEditName').value.trim(),sort_order=Math.max(1,Number($('#masterEditOrder').value)||1),active=$('#masterEditActive').checked;if(!name)return alert(`${c.label}名を入力してください。`);const dup=c.rows.find(r=>r.name===name&&Number(r.id)!==id);if(dup)return alert(`同じ${c.label}名がすでにあります。`);const existing=id?c.rows.find(r=>Number(r.id)===id):null;const btn=$('#saveMasterBtn');btn.disabled=true;btn.textContent='保存中…';try{if(existing){const {error}=await supabaseClient.from(c.table).update({name,sort_order,active}).eq('id',id);if(error)throw error;if(existing.name!==name)await propagateMasterRename(type,existing.name,name);}else{const {error}=await supabaseClient.from(c.table).insert({name,sort_order,active});if(error)throw error;}$('#masterEditDialog').close();await refreshMasters();await refreshEmployeeAdmin();await loadRemoteEmployees();render();}catch(err){console.error(err);alert(err.message||`${c.label}の保存に失敗しました。`);}finally{btn.disabled=false;btn.textContent='保存';}});
+async function toggleMaster(type,id){const c=masterConfig(type),row=c.rows.find(r=>Number(r.id)===Number(id));if(!row)return;if(row.active){const {count,error}=await supabaseClient.from('employees').select('id',{count:'exact',head:true}).eq(c.employeeField,row.name).eq('active',true);if(error)throw error;if(count>0&&!confirm(`${row.name} は ${count}名の社員に設定されています。\n停止すると新規選択肢から外れますが、既存社員の設定は残ります。続けますか？`))return;}try{const {error}=await supabaseClient.from(c.table).update({active:!row.active}).eq('id',id);if(error)throw error;await refreshMasters();}catch(err){console.error(err);alert(err.message||'状態変更に失敗しました。')}}
+async function deleteMaster(type,id){const c=masterConfig(type),row=c.rows.find(r=>Number(r.id)===Number(id));if(!row)return;try{const {count,error}=await supabaseClient.from('employees').select('id',{count:'exact',head:true}).eq(c.employeeField,row.name);if(error)throw error;if(count>0)return alert(`${row.name} は ${count}名の社員に使用中のため削除できません。先に社員の${c.label}を変更するか、「停止」を使ってください。`);if(!confirm(`${row.name} を完全に削除しますか？`))return;const {error:delErr}=await supabaseClient.from(c.table).delete().eq('id',id);if(delErr)throw delErr;await refreshMasters();}catch(err){console.error(err);alert(err.message||'削除に失敗しました。')}}
+async function moveMaster(type,id,delta){const c=masterConfig(type),rows=[...c.rows].sort((a,b)=>(a.sort_order||0)-(b.sort_order||0)||a.id-b.id),i=rows.findIndex(r=>Number(r.id)===Number(id)),j=i+delta;if(i<0||j<0||j>=rows.length)return;const a=rows[i],b=rows[j],ao=a.sort_order||i+1,bo=b.sort_order||j+1;try{const {error:e1}=await supabaseClient.from(c.table).update({sort_order:bo}).eq('id',a.id);if(e1)throw e1;const {error:e2}=await supabaseClient.from(c.table).update({sort_order:ao}).eq('id',b.id);if(e2)throw e2;await refreshMasters();}catch(err){console.error(err);alert(err.message||'並び替えに失敗しました。')}}
+$('#addDepartmentBtn')?.addEventListener('click',()=>openMasterEdit('department'));$('#addJobTypeBtn')?.addEventListener('click',()=>openMasterEdit('job'));
+
 function openProfile(){$('#currentUserSelect').innerHTML=data.employees.map(e=>`<option value="${e.id}">${esc(e.name)}（${esc(e.department)}）</option>`).join('');$('#currentUserSelect').value=data.settings.currentUserId;const vis=new Set(data.settings.visibleEmployeeIds);$('#visibleEmployees').innerHTML=data.employees.map(e=>`<label><input type="checkbox" value="${e.id}" ${vis.has(e.id)?'checked':''}> <span>${esc(e.name)} <small>${esc(e.department)}</small></span></label>`).join('');$('#profileDialog').showModal()}
 $('#profileBtn').addEventListener('click',openProfile);
 $('#saveProfileBtn').addEventListener('click',ev=>{ev.preventDefault();data.settings.currentUserId=$('#currentUserSelect').value;const checked=[...document.querySelectorAll('#visibleEmployees input:checked')].map(x=>x.value);if(!checked.includes(data.settings.currentUserId))checked.unshift(data.settings.currentUserId);data.settings.visibleEmployeeIds=checked;save();$('#profileDialog').close();render()});
@@ -255,7 +287,7 @@ function renderStatusMaster(){
  wrap.querySelectorAll('.edit-status').forEach(b=>b.addEventListener('click',()=>openStatusEdit(b.dataset.id)));wrap.querySelectorAll('.toggle-status').forEach(b=>b.addEventListener('click',()=>toggleStatus(b.dataset.id)));wrap.querySelectorAll('.delete-status').forEach(b=>b.addEventListener('click',()=>deleteStatus(b.dataset.id)));wrap.querySelectorAll('.status-up').forEach(b=>b.addEventListener('click',()=>moveStatus(b.dataset.id,-1)));wrap.querySelectorAll('.status-down').forEach(b=>b.addEventListener('click',()=>moveStatus(b.dataset.id,1)));
 }
 function switchAdminView(view){
- document.querySelectorAll('.admin-tab').forEach(b=>b.classList.toggle('active',b.dataset.adminView===view));$('#statusAdminPanel').hidden=view!=='status';$('#employeeAdminPanel').hidden=view!=='employee';if(view==='employee')refreshEmployeeAdmin();else renderStatusMaster();
+ document.querySelectorAll('.admin-tab').forEach(b=>b.classList.toggle('active',b.dataset.adminView===view));$('#statusAdminPanel').hidden=view!=='status';$('#employeeAdminPanel').hidden=view!=='employee';$('#departmentAdminPanel').hidden=view!=='department';$('#jobAdminPanel').hidden=view!=='job';if(view==='employee')refreshEmployeeAdmin();else if(view==='department')renderMasterAdmin('department');else if(view==='job')renderMasterAdmin('job');else renderStatusMaster();
 }
 function openAdmin(){switchAdminView('status');$('#adminDialog').showModal()}
 $('#adminBtn').addEventListener('click',openAdmin);$('#addStatusBtn').addEventListener('click',()=>openStatusEdit());document.querySelectorAll('.admin-tab').forEach(b=>b.addEventListener('click',()=>switchAdminView(b.dataset.adminView)));

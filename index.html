@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#3a9d74" />
   <title>山十 行先予定表</title>
-  <link rel="stylesheet" href="styles.css?v=3.1.0" />
+  <link rel="stylesheet" href="styles.css?v=3.2.0" />
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -116,9 +116,8 @@
       <label>ログインID<input id="newLoginId" autocomplete="off" placeholder="例：yamada" required /></label>
       <label>パスワード<input id="newPassword" type="password" autocomplete="new-password" placeholder="追加時は必須・修正時は変更する場合のみ入力" /></label>
       <label>氏名<input id="newName" required /></label>
-      <label>部署<input id="newDepartment" required /></label>
-      <label>職種（任意）<input id="newOccupation" list="occupationCandidates" placeholder="例：事務職 / 空欄でも可" /></label>
-      <datalist id="occupationCandidates"><option value="営業職"></option><option value="事務職"></option><option value="現場職"></option><option value="配送職"></option></datalist>
+      <label>部署<select id="newDepartment" required><option value="">選択してください</option></select></label>
+      <label>職種（任意）<select id="newOccupation"><option value="">未設定</option></select></label>
       <label>権限<select id="newAccessRole"><option value="user">一般ユーザー</option><option value="admin">管理者</option></select></label>
       <div id="employeeFormHelp" class="notice">追加すると、認証アカウント・社員情報・初期状態（在席／本社／対応可）をまとめて作成します。</div>
       <div class="dialog-actions"><button type="button" value="cancel" class="secondary">キャンセル</button><button type="button" id="saveEmployeeBtn" class="primary">追加</button></div>
@@ -142,6 +141,8 @@
       <div class="admin-tabs">
         <button type="button" class="admin-tab active" data-admin-view="status">状態管理</button>
         <button type="button" class="admin-tab" data-admin-view="employee">社員管理</button>
+        <button type="button" class="admin-tab" data-admin-view="department">部署管理</button>
+        <button type="button" class="admin-tab" data-admin-view="job">職種管理</button>
       </div>
       <section id="statusAdminPanel" class="admin-panel">
         <div class="section-head">
@@ -164,6 +165,14 @@
         </div>
         <div id="employeeAdminNotice" class="notice" hidden></div>
         <div id="employeeAdminList" class="employee-admin-list"></div>
+      </section>
+      <section id="departmentAdminPanel" class="admin-panel" hidden>
+        <div class="section-head"><div><h3>部署管理</h3><p class="help">部署の追加・名称変更・並び順・使用/停止を管理します。</p></div><button type="button" id="addDepartmentBtn" class="primary">＋ 部署を追加</button></div>
+        <div id="departmentAdminNotice" class="notice" hidden></div><div id="departmentMasterList" class="master-list"></div>
+      </section>
+      <section id="jobAdminPanel" class="admin-panel" hidden>
+        <div class="section-head"><div><h3>職種管理</h3><p class="help">職種の追加・名称変更・並び順・使用/停止を管理します。</p></div><button type="button" id="addJobTypeBtn" class="primary">＋ 職種を追加</button></div>
+        <div id="jobAdminNotice" class="notice" hidden></div><div id="jobTypeMasterList" class="master-list"></div>
       </section>
       <div class="dialog-actions"><button type="button" value="cancel" class="secondary">閉じる</button></div>
     </form>
@@ -189,8 +198,20 @@
   </dialog>
 
   </div>
+
+  <dialog id="masterEditDialog">
+    <form id="masterEditForm" method="dialog" class="dialog-form">
+      <div class="dialog-title"><div><div class="eyebrow">MASTER DATA</div><h2 id="masterEditTitle">マスタを追加</h2></div><button type="button" value="cancel" class="icon-btn" aria-label="閉じる">×</button></div>
+      <input id="masterEditType" type="hidden" /><input id="masterEditId" type="hidden" />
+      <label>名称<input id="masterEditName" maxlength="40" required /></label>
+      <label>並び順<input id="masterEditOrder" type="number" min="1" step="1" value="1" /></label>
+      <label class="check-line"><input id="masterEditActive" type="checkbox" checked /> 使用する</label>
+      <div class="notice">名称変更時、現在その部署・職種を設定している社員も新しい名称へ自動更新します。</div>
+      <div class="dialog-actions"><button type="button" value="cancel" class="secondary">キャンセル</button><button type="button" id="saveMasterBtn" class="primary">保存</button></div>
+    </form>
+  </dialog>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="supabase-config.js?v=3.1.0"></script>
-  <script src="app.js?v=3.1.0"></script>
+  <script src="supabase-config.js?v=3.2.0"></script>
+  <script src="app.js?v=3.2.0"></script>
 </body>
 </html>
