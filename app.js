@@ -1,3 +1,97 @@
+// Ver.3.0 Supabase authentication / shared current status
+let supabaseClient=null;
+let authSession=null;
+let currentEmployeeProfile=null;
+let statusRealtimeChannel=null;
+let remoteMode=false;
+
+function supabaseConfigured(){
+ const c=window.YAMAJU_SUPABASE||{};
+ return !!(c.url&&c.publishableKey&&c.publishableKey!=='PASTE_YOUR_PUBLISHABLE_KEY_HERE');
+}
+function loginEmailFromId(id){
+ const raw=String(id||'').trim().toLowerCase();
+ const domain=(window.YAMAJU_SUPABASE?.loginDomain||'yamaju.local').trim();
+ return raw.includes('@')?raw:`${raw}@${domain}`;
+}
+function showLogin(message=''){
+ document.querySelector('#appRoot')?.setAttribute('hidden','');
+ document.querySelector('#loginScreen')?.removeAttribute('hidden');
+ const err=document.querySelector('#loginError');if(err)err.textContent=message;
+}
+function showApp(){
+ document.querySelector('#loginScreen')?.setAttribute('hidden','');
+ document.querySelector('#appRoot')?.removeAttribute('hidden');
+}
+function toEmployeeModel(emp,statusRow){
+ return {
+  id:String(emp.id),dbId:Number(emp.id),authUserId:emp.auth_user_id||'',name:emp.name||'',department:emp.department||'',occupation:emp.job_type||'その他',role:emp.role||'',
+  status:statusRow?.status||'在席',destination:statusRow?.destination||'本社',purpose:statusRow?.purpose||'',returnTime:(statusRow?.return_time||'').slice(0,5),phone:statusRow?.phone_status||'ok',direct:!!statusRow?.direct_go,goHome:!!statusRow?.direct_return,memo:statusRow?.memo||''
+ };
+}
+async function loadRemoteEmployees(){
+ if(!supabaseClient||!authSession)return;
+ const [{data:emps,error:empErr},{data:sts,error:stErr}]=await Promise.all([
+  supabaseClient.from('employees').select('id,auth_user_id,name,department,job_type,role,active').eq('active',true).order('id'),
+  supabaseClient.from('employee_status').select('id,employee_id,status,destination,purpose,return_time,phone_status,direct_go,direct_return,memo,updated_at')
+ ]);
+ if(empErr)throw empErr;if(stErr)throw stErr;
+ const statusMap=new Map((sts||[]).map(s=>[String(s.employee_id),s]));
+ data.employees=(emps||[]).map(e=>toEmployeeModel(e,statusMap.get(String(e.id))));
+ currentEmployeeProfile=(emps||[]).find(e=>e.auth_user_id===authSession.user.id)||null;
+ if(!currentEmployeeProfile)throw new Error('このログインユーザーに社員情報が紐付いていません。管理者へ連絡してください。');
+ const me=String(currentEmployeeProfile.id),valid=new Set(data.employees.map(e=>e.id));
+ data.settings.currentUserId=me;
+ const kept=(data.settings.visibleEmployeeIds||[]).filter(id=>valid.has(String(id))).map(String);
+ data.settings.visibleEmployeeIds=kept.length?kept:data.employees.map(e=>e.id);
+ if(!data.settings.visibleEmployeeIds.includes(me))data.settings.visibleEmployeeIds.unshift(me);
+ remoteMode=true;
+ const userLabel=document.querySelector('#loggedInUser');if(userLabel)userLabel.textContent=currentEmployeeProfile.name||authSession.user.email;
+ const isAdmin=currentEmployeeProfile.role==='admin';
+ const admin=document.querySelector('#adminBtn');if(admin)admin.hidden=!isAdmin;
+ const add=document.querySelector('#addEmployeeBtn');if(add)add.hidden=true;
+ save();
+}
+async function saveEmployeeStatusRemote(e){
+ if(!remoteMode||!supabaseClient)return;
+ const payload={employee_id:Number(e.dbId||e.id),status:e.status,destination:e.destination||null,purpose:e.purpose||null,return_time:e.returnTime||null,phone_status:e.phone||'ok',direct_go:!!e.direct,direct_return:!!e.goHome,memo:e.memo||null,updated_at:new Date().toISOString()};
+ const {data:existing,error:findErr}=await supabaseClient.from('employee_status').select('id').eq('employee_id',payload.employee_id).limit(1);
+ if(findErr)throw findErr;
+ if(existing&&existing.length){const {error}=await supabaseClient.from('employee_status').update(payload).eq('id',existing[0].id);if(error)throw error;}
+ else {const {error}=await supabaseClient.from('employee_status').insert(payload);if(error)throw error;}
+}
+function startStatusRealtime(){
+ if(!supabaseClient)return;
+ if(statusRealtimeChannel)supabaseClient.removeChannel(statusRealtimeChannel);
+ statusRealtimeChannel=supabaseClient.channel('yamaju-employee-status').on('postgres_changes',{event:'*',schema:'public',table:'employee_status'},async()=>{
+  try{await loadRemoteEmployees();render();}catch(err){console.error(err)}
+ }).subscribe();
+}
+async function handleAuthenticated(session){
+ authSession=session;
+ try{await loadRemoteEmployees();showApp();render();startStatusRealtime();}
+ catch(err){console.error(err);await supabaseClient.auth.signOut();showLogin(err.message||'社員情報の取得に失敗しました。');}
+}
+async function bootAuth(){
+ setupDialogSafety();
+ const loginForm=document.querySelector('#loginForm');
+ loginForm?.addEventListener('submit',async ev=>{
+  ev.preventDefault();const btn=document.querySelector('#loginBtn'),err=document.querySelector('#loginError');if(err)err.textContent='';
+  if(!supabaseConfigured()){if(err)err.textContent='SupabaseのPublishable keyが未設定です。';return;}
+  btn.disabled=true;btn.textContent='ログイン中…';
+  try{const email=loginEmailFromId(document.querySelector('#loginId').value),password=document.querySelector('#loginPassword').value;const {data:authData,error}=await supabaseClient.auth.signInWithPassword({email,password});if(error)throw error;await handleAuthenticated(authData.session);}
+  catch(e){console.error(e);if(err)err.textContent='ログインIDまたはパスワードを確認してください。';}
+  finally{btn.disabled=false;btn.textContent='ログイン';}
+ });
+ document.querySelector('#logoutBtn')?.addEventListener('click',async()=>{if(statusRealtimeChannel)await supabaseClient.removeChannel(statusRealtimeChannel);await supabaseClient.auth.signOut();authSession=null;currentEmployeeProfile=null;remoteMode=false;showLogin('ログアウトしました。');});
+ if(!supabaseConfigured()){showLogin('初回設定：supabase-config.js にPublishable keyを設定してください。');return;}
+ if(!window.supabase?.createClient){showLogin('Supabaseライブラリを読み込めませんでした。ネットワークを確認してください。');return;}
+ supabaseClient=window.supabase.createClient(window.YAMAJU_SUPABASE.url,window.YAMAJU_SUPABASE.publishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}});
+ const {data:{session}}=await supabaseClient.auth.getSession();
+ if(session)await handleAuthenticated(session);else showLogin();
+ supabaseClient.auth.onAuthStateChange((event,session)=>{if(event==='SIGNED_OUT')showLogin();});
+}
+
 const KEY='yamaju-board-v2';
 const DEFAULT_STATUSES=[
  {id:'present',name:'在席',color:'#bfe7c9',active:true,order:1,useReturn:false,useDestination:true,defaultDestination:'本社'},
@@ -76,11 +170,11 @@ function renderSchedules(board){
 function applyEditRules(){const st=$('#editStatus').value,sm=statusByName(st);if(sm.defaultDestination&&!$('#editDestination').value.trim())$('#editDestination').value=sm.defaultDestination;if(sm.useDestination===false){$('#editDestination').value='';$('#editPurpose').value=''}if(!sm.useReturn)$('#editReturn').value='';if($('#editGoHome').checked)$('#editReturn').value=''}
 function openEdit(id){const e=data.employees.find(x=>x.id===id);$('#editEmployeeId').value=id;$('#editTitle').textContent=e.name;fillStatusSelect($('#editStatus'),e.status,true);$('#editDestination').value=e.destination;$('#editPurpose').value=e.purpose;$('#editReturn').value=e.returnTime;$('#editPhone').value=e.phone;$('#editDirect').checked=e.direct;$('#editGoHome').checked=e.goHome;$('#editMemo').value=e.memo||'';$('#editDialog').showModal()}
 $('#editStatus').addEventListener('change',applyEditRules);$('#editGoHome').addEventListener('change',applyEditRules);
-$('#saveEditBtn').addEventListener('click',ev=>{ev.preventDefault();applyEditRules();const id=$('#editEmployeeId').value,e=data.employees.find(x=>x.id===id),before=e.status;Object.assign(e,{status:$('#editStatus').value,destination:$('#editDestination').value.trim(),purpose:$('#editPurpose').value.trim(),returnTime:$('#editReturn').value,phone:$('#editPhone').value,direct:$('#editDirect').checked,goHome:$('#editGoHome').checked,memo:$('#editMemo').value.trim()});pushHistory('manual',e,{before,after:e.status,destination:e.destination});save();$('#editDialog').close();render()});
+$('#saveEditBtn').addEventListener('click',async ev=>{ev.preventDefault();applyEditRules();const id=$('#editEmployeeId').value,e=data.employees.find(x=>x.id===id),before=e.status;Object.assign(e,{status:$('#editStatus').value,destination:$('#editDestination').value.trim(),purpose:$('#editPurpose').value.trim(),returnTime:$('#editReturn').value,phone:$('#editPhone').value,direct:$('#editDirect').checked,goHome:$('#editGoHome').checked,memo:$('#editMemo').value.trim()});pushHistory('manual',e,{before,after:e.status,destination:e.destination});save();try{await saveEmployeeStatusRemote(e);$('#editDialog').close();render();}catch(err){console.error(err);alert('Supabaseへの保存に失敗しました。通信状態を確認してください。');}});
 function openSchedule(id=''){const s=data.schedules.find(x=>x.id===id),d=new Date();$('#scheduleId').value=id;$('#scheduleDate').value=s?.startAt?.slice(0,10)||d.toISOString().slice(0,10);$('#scheduleStart').value=s?.startAt?.slice(11,16)||'09:00';$('#scheduleEnd').value=s?.endAt?.slice(11,16)||'10:00';$('#scheduleEmployee').value=s?.employeeId||data.settings.currentUserId||data.employees[0]?.id;fillStatusSelect($('#scheduleStatus'),s?.status||activeStatusNames()[0]||'在席',true);$('#scheduleDestination').value=s?.destination||'';$('#schedulePurpose').value=s?.purpose||'';$('#schedulePhone').value=s?.phone||'later';$('#scheduleAfter').value=s?.after||'present';$('#scheduleDirect').checked=!!s?.direct;$('#scheduleGoHome').checked=!!s?.goHome;$('#scheduleMemo').value=s?.memo||'';$('#scheduleDialog').showModal()}
 $('#saveScheduleBtn').addEventListener('click',ev=>{ev.preventDefault();const date=$('#scheduleDate').value,start=$('#scheduleStart').value,end=$('#scheduleEnd').value;if(!date||!start||!end)return alert('開始・終了時刻を入力してください。');if(end<=start)return alert('終了時刻は開始時刻より後にしてください。');const existing=data.schedules.find(x=>x.id===$('#scheduleId').value);const obj={id:existing?.id||crypto.randomUUID(),employeeId:$('#scheduleEmployee').value,startAt:`${date}T${start}:00`,endAt:`${date}T${end}:00`,status:$('#scheduleStatus').value,destination:$('#scheduleDestination').value.trim(),purpose:$('#schedulePurpose').value.trim(),phone:$('#schedulePhone').value,after:$('#scheduleAfter').value,direct:$('#scheduleDirect').checked,goHome:$('#scheduleGoHome').checked,memo:$('#scheduleMemo').value.trim(),startDone:existing?.startDone||false,endDone:existing?.endDone||false,beforeSnapshot:existing?.beforeSnapshot||null};if(existing)Object.assign(existing,obj);else data.schedules.push(obj);const e=data.employees.find(x=>x.id===obj.employeeId);pushHistory('schedule-create',e,{status:obj.status,destination:obj.destination,startLabel:dateFmt(obj.startAt),endLabel:dateFmt(obj.endAt)});save();$('#scheduleDialog').close();render()});
 function deleteSchedule(id){const s=data.schedules.find(x=>x.id===id);if(!s||!confirm('この予定を削除しますか？'))return;const e=data.employees.find(x=>x.id===s.employeeId);pushHistory('schedule-delete',e,{status:s.status,startLabel:dateFmt(s.startAt),endLabel:dateFmt(s.endAt)});data.schedules=data.schedules.filter(x=>x.id!==id);save();render()}
-$('#addEmployeeBtn').addEventListener('click',()=>$('#employeeDialog').showModal());
+$('#addEmployeeBtn').addEventListener('click',()=>{if(remoteMode)return alert('Ver.3.0では社員追加はSupabase管理画面から行ってください。');$('#employeeDialog').showModal()});
 $('#saveEmployeeBtn').addEventListener('click',ev=>{ev.preventDefault();const name=$('#newName').value.trim(),department=$('#newDepartment').value.trim();if(!name||!department)return;const initial=statusByName('在席').active?'在席':activeStatusNames()[0]||data.statuses[0]?.name||'在席',sm=statusByName(initial);const e={id:crypto.randomUUID(),name,department,occupation:$('#newOccupation').value,role:$('#newRole').value.trim(),status:initial,destination:sm.defaultDestination||'',purpose:'',returnTime:'',phone:'ok',direct:false,goHome:false,memo:''};data.employees.push(e);data.settings.visibleEmployeeIds.push(e.id);save();$('#employeeDialog').close();$('#employeeForm').reset();render()});
 function openProfile(){$('#currentUserSelect').innerHTML=data.employees.map(e=>`<option value="${e.id}">${esc(e.name)}（${esc(e.department)}）</option>`).join('');$('#currentUserSelect').value=data.settings.currentUserId;const vis=new Set(data.settings.visibleEmployeeIds);$('#visibleEmployees').innerHTML=data.employees.map(e=>`<label><input type="checkbox" value="${e.id}" ${vis.has(e.id)?'checked':''}> <span>${esc(e.name)} <small>${esc(e.department)}</small></span></label>`).join('');$('#profileDialog').showModal()}
 $('#profileBtn').addEventListener('click',openProfile);
@@ -140,5 +234,5 @@ function setupDialogSafety(){
 ['searchInput','departmentFilter','occupationFilter','statusFilter'].forEach(id=>$('#'+id).addEventListener(id==='searchInput'?'input':'change',render));document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click',()=>{currentView=b.dataset.view;render()}));$('#monitorBtn').addEventListener('click',()=>document.body.classList.add('monitor'));
 $('#exitMonitorBtn').addEventListener('click',()=>document.body.classList.remove('monitor'));
 document.addEventListener('keydown',(e)=>{if(e.key==='Escape'&&document.body.classList.contains('monitor'))document.body.classList.remove('monitor')});
-setupDialogSafety();
-setInterval(autoSwitch,15000);autoSwitch();render();
+setInterval(autoSwitch,15000);
+bootAuth();

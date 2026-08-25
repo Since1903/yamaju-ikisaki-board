@@ -5,9 +5,24 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#3a9d74" />
   <title>山十 行先予定表</title>
-  <link rel="stylesheet" href="styles.css?v=2.2.2.0" />
+  <link rel="stylesheet" href="styles.css?v=3.0.0" />
 </head>
 <body>
+  <section id="loginScreen" class="login-screen">
+    <div class="login-card">
+      <div class="eyebrow">YAMAJU SECURE BOARD</div>
+      <h1>山十 行先予定表</h1>
+      <p class="login-lead">会社から発行されたログインIDとパスワードを入力してください。</p>
+      <form id="loginForm" class="login-form" autocomplete="on">
+        <label>ログインID<input id="loginId" autocomplete="username" placeholder="例：watanabe" required /></label>
+        <label>パスワード<input id="loginPassword" type="password" autocomplete="current-password" required /></label>
+        <button id="loginBtn" type="submit" class="primary login-submit">ログイン</button>
+        <div id="loginError" class="login-error" role="alert"></div>
+      </form>
+      <p class="login-note">※未ログインでは社員・行先情報は表示されません。</p>
+    </div>
+  </section>
+  <div id="appRoot" hidden>
   <button id="exitMonitorBtn" class="exit-monitor-btn" type="button" aria-label="大型表示を終了">← 通常表示に戻る</button>
   <header class="app-header">
     <div>
@@ -15,10 +30,12 @@
       <h1>山十 行先予定表</h1>
     </div>
     <div class="header-actions">
+      <span id="loggedInUser" class="logged-user"></span>
+      <button id="logoutBtn" class="secondary">ログアウト</button>
       <button id="profileBtn" class="secondary">表示設定</button>
       <button id="adminBtn" class="secondary">管理設定</button>
       <button id="monitorBtn" class="secondary">大型表示</button>
-      <button id="addEmployeeBtn" class="primary">社員追加</button>
+      <button id="addEmployeeBtn" class="primary" hidden>社員追加</button>
     </div>
   </header>
 
@@ -154,6 +171,9 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=2.2.3.0"></script>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-config.js?v=3.0.0"></script>
+  <script src="app.js?v=3.0.0"></script>
 </body>
 </html>
