@@ -3,6 +3,7 @@ let supabaseClient=null;
 let authSession=null;
 let currentEmployeeProfile=null;
 let statusRealtimeChannel=null;
+let scheduleRealtimeChannel=null;
 let remoteMode=false;
 let departmentMasterRows=[];
 let jobTypeMasterRows=[];
@@ -71,6 +72,55 @@ async function loadRemoteEmployees(){
  const add=document.querySelector('#addEmployeeBtn');if(add)add.hidden=true;
  save();
 }
+
+function scheduleFromDb(row){
+ return {
+  id:String(row.id),dbId:Number(row.id),employeeId:String(row.employee_id),startAt:row.start_at,endAt:row.end_at,status:row.status||'在席',destination:row.destination||'',purpose:row.purpose||'',phone:row.phone_status||'later',after:row.after_action||'present',direct:!!row.direct_go,goHome:!!row.direct_return,memo:row.memo||'',startDone:!!row.start_done,endDone:!!row.end_done,beforeSnapshot:row.before_snapshot||null
+ };
+}
+async function loadRemoteSchedules(){
+ if(!supabaseClient||!authSession)return;
+ const {data:rows,error}=await supabaseClient.from('schedules').select('id,employee_id,start_at,end_at,status,destination,purpose,phone_status,after_action,direct_go,direct_return,memo,start_done,end_done,before_snapshot,updated_at').order('start_at');
+ if(error)throw error;
+ data.schedules=(rows||[]).map(scheduleFromDb);
+ save();
+}
+function schedulePayloadFromForm(){
+ const date=$('#scheduleDate').value,start=$('#scheduleStart').value,end=$('#scheduleEnd').value;
+ if(!date||!start||!end)throw new Error('開始・終了時刻を入力してください。');
+ const startDate=new Date(`${date}T${start}:00`),endDate=new Date(`${date}T${end}:00`);
+ if(!(endDate>startDate))throw new Error('終了時刻は開始時刻より後にしてください。');
+ return {employee_id:Number($('#scheduleEmployee').value),start_at:startDate.toISOString(),end_at:endDate.toISOString(),status:$('#scheduleStatus').value,destination:$('#scheduleDestination').value.trim()||null,purpose:$('#schedulePurpose').value.trim()||null,phone_status:$('#schedulePhone').value,after_action:$('#scheduleAfter').value,direct_go:$('#scheduleDirect').checked,direct_return:$('#scheduleGoHome').checked,memo:$('#scheduleMemo').value.trim()||null,updated_at:new Date().toISOString()};
+}
+async function saveScheduleRemote(id=''){
+ const payload=schedulePayloadFromForm();
+ if(id){
+  const existing=data.schedules.find(x=>x.id===String(id));
+  if(existing?.startDone)throw new Error('開始済みの予定は編集できません。');
+  const {error}=await supabaseClient.from('schedules').update(payload).eq('id',Number(id));if(error)throw error;
+ }else{
+  payload.created_by=authSession.user.id;
+  const {error}=await supabaseClient.from('schedules').insert(payload);if(error)throw error;
+ }
+ await loadRemoteSchedules();
+}
+async function deleteScheduleRemote(id){
+ const existing=data.schedules.find(x=>x.id===String(id));
+ if(existing?.startDone&&!existing?.endDone)throw new Error('実行中の予定は削除できません。終了後に削除してください。');
+ const {error}=await supabaseClient.from('schedules').delete().eq('id',Number(id));if(error)throw error;
+ await loadRemoteSchedules();
+}
+function startScheduleRealtime(){
+ if(!supabaseClient)return;
+ if(scheduleRealtimeChannel)supabaseClient.removeChannel(scheduleRealtimeChannel);
+ scheduleRealtimeChannel=supabaseClient.channel('yamaju-schedules').on('postgres_changes',{event:'*',schema:'public',table:'schedules'},async()=>{
+  try{await loadRemoteSchedules();if(currentView==='schedule')render();}catch(err){console.error(err)}
+ }).subscribe();
+}
+function localDateParts(iso){
+ const d=new Date(iso||Date.now());const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0'),h=String(d.getHours()).padStart(2,'0'),min=String(d.getMinutes()).padStart(2,'0');
+ return {date:`${y}-${m}-${day}`,time:`${h}:${min}`};
+}
 async function saveEmployeeStatusRemote(e){
  if(!remoteMode||!supabaseClient)return;
  const payload={employee_id:Number(e.dbId||e.id),status:e.status,destination:e.destination||null,purpose:e.purpose||null,return_time:e.returnTime||null,phone_status:e.phone||'ok',direct_go:!!e.direct,direct_return:!!e.goHome,memo:e.memo||null,updated_at:new Date().toISOString()};
@@ -88,7 +138,7 @@ function startStatusRealtime(){
 }
 async function handleAuthenticated(session){
  authSession=session;
- try{await loadMasterData();await loadRemoteEmployees();showApp();render();startStatusRealtime();}
+ try{await loadMasterData();await loadRemoteEmployees();await loadRemoteSchedules();showApp();render();startStatusRealtime();startScheduleRealtime();}
  catch(err){console.error(err);await supabaseClient.auth.signOut();showLogin(err.message||'社員情報の取得に失敗しました。');}
 }
 async function bootAuth(){
@@ -102,7 +152,7 @@ async function bootAuth(){
   catch(e){console.error(e);if(err)err.textContent='ログインIDまたはパスワードを確認してください。';}
   finally{btn.disabled=false;btn.textContent='ログイン';}
  });
- document.querySelector('#logoutBtn')?.addEventListener('click',async()=>{if(statusRealtimeChannel)await supabaseClient.removeChannel(statusRealtimeChannel);await supabaseClient.auth.signOut();authSession=null;currentEmployeeProfile=null;remoteMode=false;showLogin('ログアウトしました。');});
+ document.querySelector('#logoutBtn')?.addEventListener('click',async()=>{if(statusRealtimeChannel)await supabaseClient.removeChannel(statusRealtimeChannel);if(scheduleRealtimeChannel)await supabaseClient.removeChannel(scheduleRealtimeChannel);await supabaseClient.auth.signOut();authSession=null;currentEmployeeProfile=null;remoteMode=false;showLogin('ログアウトしました。');});
  if(!supabaseConfigured()){showLogin('初回設定：supabase-config.js にPublishable keyを設定してください。');return;}
  if(!window.supabase?.createClient){showLogin('Supabaseライブラリを読み込めませんでした。ネットワークを確認してください。');return;}
  supabaseClient=window.supabase.createClient(window.YAMAJU_SUPABASE.url,window.YAMAJU_SUPABASE.publishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}});
@@ -190,9 +240,25 @@ function applyEditRules(){const st=$('#editStatus').value,sm=statusByName(st);if
 function openEdit(id){const e=data.employees.find(x=>x.id===id);$('#editEmployeeId').value=id;$('#editTitle').textContent=e.name;fillStatusSelect($('#editStatus'),e.status,true);$('#editDestination').value=e.destination;$('#editPurpose').value=e.purpose;$('#editReturn').value=e.returnTime;$('#editPhone').value=e.phone;$('#editDirect').checked=e.direct;$('#editGoHome').checked=e.goHome;$('#editMemo').value=e.memo||'';$('#editDialog').showModal()}
 $('#editStatus').addEventListener('change',applyEditRules);$('#editGoHome').addEventListener('change',applyEditRules);
 $('#saveEditBtn').addEventListener('click',async ev=>{ev.preventDefault();applyEditRules();const id=$('#editEmployeeId').value,e=data.employees.find(x=>x.id===id),before=e.status;Object.assign(e,{status:$('#editStatus').value,destination:$('#editDestination').value.trim(),purpose:$('#editPurpose').value.trim(),returnTime:$('#editReturn').value,phone:$('#editPhone').value,direct:$('#editDirect').checked,goHome:$('#editGoHome').checked,memo:$('#editMemo').value.trim()});pushHistory('manual',e,{before,after:e.status,destination:e.destination});save();try{await saveEmployeeStatusRemote(e);$('#editDialog').close();render();}catch(err){console.error(err);alert('Supabaseへの保存に失敗しました。通信状態を確認してください。');}});
-function openSchedule(id=''){const s=data.schedules.find(x=>x.id===id),d=new Date();$('#scheduleId').value=id;$('#scheduleDate').value=s?.startAt?.slice(0,10)||d.toISOString().slice(0,10);$('#scheduleStart').value=s?.startAt?.slice(11,16)||'09:00';$('#scheduleEnd').value=s?.endAt?.slice(11,16)||'10:00';$('#scheduleEmployee').value=s?.employeeId||data.settings.currentUserId||data.employees[0]?.id;fillStatusSelect($('#scheduleStatus'),s?.status||activeStatusNames()[0]||'在席',true);$('#scheduleDestination').value=s?.destination||'';$('#schedulePurpose').value=s?.purpose||'';$('#schedulePhone').value=s?.phone||'later';$('#scheduleAfter').value=s?.after||'present';$('#scheduleDirect').checked=!!s?.direct;$('#scheduleGoHome').checked=!!s?.goHome;$('#scheduleMemo').value=s?.memo||'';$('#scheduleDialog').showModal()}
-$('#saveScheduleBtn').addEventListener('click',ev=>{ev.preventDefault();const date=$('#scheduleDate').value,start=$('#scheduleStart').value,end=$('#scheduleEnd').value;if(!date||!start||!end)return alert('開始・終了時刻を入力してください。');if(end<=start)return alert('終了時刻は開始時刻より後にしてください。');const existing=data.schedules.find(x=>x.id===$('#scheduleId').value);const obj={id:existing?.id||crypto.randomUUID(),employeeId:$('#scheduleEmployee').value,startAt:`${date}T${start}:00`,endAt:`${date}T${end}:00`,status:$('#scheduleStatus').value,destination:$('#scheduleDestination').value.trim(),purpose:$('#schedulePurpose').value.trim(),phone:$('#schedulePhone').value,after:$('#scheduleAfter').value,direct:$('#scheduleDirect').checked,goHome:$('#scheduleGoHome').checked,memo:$('#scheduleMemo').value.trim(),startDone:existing?.startDone||false,endDone:existing?.endDone||false,beforeSnapshot:existing?.beforeSnapshot||null};if(existing)Object.assign(existing,obj);else data.schedules.push(obj);const e=data.employees.find(x=>x.id===obj.employeeId);pushHistory('schedule-create',e,{status:obj.status,destination:obj.destination,startLabel:dateFmt(obj.startAt),endLabel:dateFmt(obj.endAt)});save();$('#scheduleDialog').close();render()});
-function deleteSchedule(id){const s=data.schedules.find(x=>x.id===id);if(!s||!confirm('この予定を削除しますか？'))return;const e=data.employees.find(x=>x.id===s.employeeId);pushHistory('schedule-delete',e,{status:s.status,startLabel:dateFmt(s.startAt),endLabel:dateFmt(s.endAt)});data.schedules=data.schedules.filter(x=>x.id!==id);save();render()}
+function openSchedule(id=''){
+ const s=data.schedules.find(x=>x.id===String(id)),d=new Date();
+ if(s?.startDone&&!s?.endDone)return alert('この予定は実行中のため編集できません。');
+ if(s?.endDone)return alert('完了済みの予定は編集できません。');
+ const sp=s?localDateParts(s.startAt):{date:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,time:'09:00'};
+ const ep=s?localDateParts(s.endAt):{time:'10:00'};
+ $('#scheduleId').value=id;$('#scheduleDate').value=sp.date;$('#scheduleStart').value=sp.time;$('#scheduleEnd').value=ep.time;$('#scheduleEmployee').value=s?.employeeId||data.settings.currentUserId||data.employees[0]?.id;fillStatusSelect($('#scheduleStatus'),s?.status||activeStatusNames()[0]||'在席',true);$('#scheduleDestination').value=s?.destination||'';$('#schedulePurpose').value=s?.purpose||'';$('#schedulePhone').value=s?.phone||'later';$('#scheduleAfter').value=s?.after||'present';$('#scheduleDirect').checked=!!s?.direct;$('#scheduleGoHome').checked=!!s?.goHome;$('#scheduleMemo').value=s?.memo||'';$('#scheduleDialog').showModal();
+}
+$('#saveScheduleBtn').addEventListener('click',async ev=>{
+ ev.preventDefault();const btn=$('#saveScheduleBtn');btn.disabled=true;
+ try{
+  if(remoteMode){await saveScheduleRemote($('#scheduleId').value);$('#scheduleDialog').close();render();return;}
+  const date=$('#scheduleDate').value,start=$('#scheduleStart').value,end=$('#scheduleEnd').value;if(!date||!start||!end)return alert('開始・終了時刻を入力してください。');if(end<=start)return alert('終了時刻は開始時刻より後にしてください。');const existing=data.schedules.find(x=>x.id===$('#scheduleId').value);const obj={id:existing?.id||crypto.randomUUID(),employeeId:$('#scheduleEmployee').value,startAt:`${date}T${start}:00`,endAt:`${date}T${end}:00`,status:$('#scheduleStatus').value,destination:$('#scheduleDestination').value.trim(),purpose:$('#schedulePurpose').value.trim(),phone:$('#schedulePhone').value,after:$('#scheduleAfter').value,direct:$('#scheduleDirect').checked,goHome:$('#scheduleGoHome').checked,memo:$('#scheduleMemo').value.trim(),startDone:existing?.startDone||false,endDone:existing?.endDone||false,beforeSnapshot:existing?.beforeSnapshot||null};if(existing)Object.assign(existing,obj);else data.schedules.push(obj);save();$('#scheduleDialog').close();render();
+ }catch(err){console.error(err);alert(err.message||'予定の保存に失敗しました。');}finally{btn.disabled=false;}
+});
+async function deleteSchedule(id){
+ const s=data.schedules.find(x=>x.id===String(id));if(!s||!confirm('この予定を削除しますか？'))return;
+ try{if(remoteMode){await deleteScheduleRemote(id);render();return;}data.schedules=data.schedules.filter(x=>x.id!==id);save();render();}catch(err){console.error(err);alert(err.message||'予定の削除に失敗しました。');}
+}
 $('#addEmployeeBtn').addEventListener('click',()=>{if(currentEmployeeProfile?.role==='admin')openEmployeeManage();});
 
 let employeeAdminRows=[];
@@ -391,7 +457,7 @@ function normalizeStatusOrder(){sortedStatuses(true).forEach((s,i)=>s.order=i+1)
 function moveStatus(id,delta){const rows=sortedStatuses(true),i=rows.findIndex(s=>s.id===id),j=i+delta;if(i<0||j<0||j>=rows.length)return;[rows[i].order,rows[j].order]=[rows[j].order,rows[i].order];normalizeStatusOrder();save();renderStatusMaster();render()}
 function toggleStatus(id){const s=data.statuses.find(x=>x.id===id);if(!s)return;if(s.active&&data.statuses.filter(x=>x.active).length<=1)return alert('使用中の状態を0件にはできません。');s.active=!s.active;pushHistory('status-master',null,{action:s.active?'再開':'停止',detail:`${s.name} を${s.active?'再開':'停止'}`});save();renderStatusMaster();render()}
 function deleteStatus(id){const s=data.statuses.find(x=>x.id===id);if(!s)return;const usedNow=data.employees.some(e=>e.status===s.name),usedSchedule=data.schedules.some(x=>x.status===s.name);if(usedNow||usedSchedule)return alert(`「${s.name}」は社員の現在状態または予定で使用中のため削除できません。先に別の状態へ変更するか、「停止」を使ってください。`);if(!confirm(`「${s.name}」を完全に削除しますか？\n過去履歴の文字は残ります。`))return;data.statuses=data.statuses.filter(x=>x.id!==id);normalizeStatusOrder();pushHistory('status-master',null,{action:'削除',detail:`${s.name} を削除`});save();renderStatusMaster();render()}
-function autoSwitch(){const now=new Date();let changed=false;const sorted=[...data.schedules].sort((a,b)=>a.startAt.localeCompare(b.startAt));sorted.forEach(s=>{const e=data.employees.find(x=>x.id===s.employeeId);if(!e)return;const start=new Date(s.startAt),end=new Date(s.endAt);if(!s.startDone&&start<=now){s.beforeSnapshot={status:e.status,destination:e.destination,purpose:e.purpose,returnTime:e.returnTime,phone:e.phone,direct:e.direct,goHome:e.goHome,memo:e.memo};const before=e.status,sm=statusByName(s.status);Object.assign(e,{status:s.status,destination:sm.useDestination===false?'':s.destination,purpose:sm.useDestination===false?'':s.purpose,returnTime:sm.useReturn?s.endAt.slice(11,16):'',phone:s.phone,direct:s.direct,goHome:s.goHome,memo:s.memo});s.startDone=true;pushHistory('auto-start',e,{before,after:e.status,destination:e.destination,startLabel:dateFmt(s.startAt),endLabel:dateFmt(s.endAt)});changed=true}if(s.startDone&&!s.endDone&&end<=now){const newer=sorted.find(x=>x.employeeId===s.employeeId&&x.id!==s.id&&new Date(x.startAt)<=now&&now<new Date(x.endAt));const before=e.status;if(!newer){if(s.goHome){Object.assign(e,{status:'外出',returnTime:'',goHome:true})}else if(s.after==='previous'&&s.beforeSnapshot){Object.assign(e,s.beforeSnapshot)}else{const present=statusByName('在席').name==='在席'?'在席':activeStatusNames()[0];const psm=statusByName(present);Object.assign(e,{status:present,destination:psm.defaultDestination||'',purpose:'',returnTime:'',phone:'ok',direct:false,goHome:false,memo:''})}}s.endDone=true;pushHistory('auto-end',e,{before,after:e.status,startLabel:dateFmt(s.startAt),endLabel:dateFmt(s.endAt)});changed=true}});if(changed){save();render()}}
+function autoSwitch(){if(remoteMode)return;const now=new Date();let changed=false;const sorted=[...data.schedules].sort((a,b)=>a.startAt.localeCompare(b.startAt));sorted.forEach(s=>{const e=data.employees.find(x=>x.id===s.employeeId);if(!e)return;const start=new Date(s.startAt),end=new Date(s.endAt);if(!s.startDone&&start<=now){s.beforeSnapshot={status:e.status,destination:e.destination,purpose:e.purpose,returnTime:e.returnTime,phone:e.phone,direct:e.direct,goHome:e.goHome,memo:e.memo};const before=e.status,sm=statusByName(s.status);Object.assign(e,{status:s.status,destination:sm.useDestination===false?'':s.destination,purpose:sm.useDestination===false?'':s.purpose,returnTime:sm.useReturn?s.endAt.slice(11,16):'',phone:s.phone,direct:s.direct,goHome:s.goHome,memo:s.memo});s.startDone=true;pushHistory('auto-start',e,{before,after:e.status,destination:e.destination,startLabel:dateFmt(s.startAt),endLabel:dateFmt(s.endAt)});changed=true}if(s.startDone&&!s.endDone&&end<=now){const newer=sorted.find(x=>x.employeeId===s.employeeId&&x.id!==s.id&&new Date(x.startAt)<=now&&now<new Date(x.endAt));const before=e.status;if(!newer){if(s.goHome){Object.assign(e,{status:'外出',returnTime:'',goHome:true})}else if(s.after==='previous'&&s.beforeSnapshot){Object.assign(e,s.beforeSnapshot)}else{const present=statusByName('在席').name==='在席'?'在席':activeStatusNames()[0];const psm=statusByName(present);Object.assign(e,{status:present,destination:psm.defaultDestination||'',purpose:'',returnTime:'',phone:'ok',direct:false,goHome:false,memo:''})}}s.endDone=true;pushHistory('auto-end',e,{before,after:e.status,startLabel:dateFmt(s.startAt),endLabel:dateFmt(s.endAt)});changed=true}});if(changed){save();render()}}
 
 // ---- Dialog safety controls -------------------------------------------------
 // Every modal must always be closable, even when required fields are empty.
