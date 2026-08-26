@@ -1,4 +1,4 @@
-// Ver.3.4.2 shared schedules / display-board resilient multi-device sync
+// Ver.4.0 unified schedule engine / server + client fallback / multi-device sync
 let supabaseClient=null;
 let authSession=null;
 let currentEmployeeProfile=null;
@@ -15,6 +15,9 @@ const MONITOR_REFRESH_MS=5000;
 const REALTIME_HEALTH_MS=30000;
 let departmentMasterRows=[];
 let jobTypeMasterRows=[];
+const APP_VERSION='4.0';
+let lastScheduleProcessAt=0;
+const SCHEDULE_PROCESS_MIN_GAP_MS=4000;
 
 function supabaseConfigured(){
  const c=window.YAMAJU_SUPABASE||{};
@@ -97,20 +100,39 @@ function schedulePayloadFromForm(){
  const date=$('#scheduleDate').value,start=$('#scheduleStart').value,end=$('#scheduleEnd').value;
  if(!date||!start||!end)throw new Error('開始・終了時刻を入力してください。');
  const startDate=new Date(`${date}T${start}:00`),endDate=new Date(`${date}T${end}:00`);
+ if(Number.isNaN(startDate.getTime())||Number.isNaN(endDate.getTime()))throw new Error('予定日時を確認してください。');
  if(!(endDate>startDate))throw new Error('終了時刻は開始時刻より後にしてください。');
+ if(endDate<=new Date())throw new Error('終了時刻が過去の予定は登録できません。');
  return {employee_id:Number($('#scheduleEmployee').value),start_at:startDate.toISOString(),end_at:endDate.toISOString(),status:$('#scheduleStatus').value,destination:$('#scheduleDestination').value.trim()||null,purpose:$('#schedulePurpose').value.trim()||null,phone_status:$('#schedulePhone').value,after_action:$('#scheduleAfter').value,direct_go:$('#scheduleDirect').checked,direct_return:$('#scheduleGoHome').checked,memo:$('#scheduleMemo').value.trim()||null,updated_at:new Date().toISOString()};
+}
+async function processDueSchedulesRemote(force=false){
+ if(!remoteMode||!supabaseClient||!authSession)return;
+ const now=Date.now();
+ if(!force&&now-lastScheduleProcessAt<SCHEDULE_PROCESS_MIN_GAP_MS)return;
+ lastScheduleProcessAt=now;
+ const {error}=await supabaseClient.rpc('process_due_schedules');
+ if(error){
+  // Cronが本体。クライアント側実行は補助なので、失敗時は表示更新を止めない。
+  console.warn('schedule process fallback failed',error);
+ }
 }
 async function saveScheduleRemote(id=''){
  const payload=schedulePayloadFromForm();
  if(id){
   const existing=data.schedules.find(x=>x.id===String(id));
-  if(existing?.startDone)throw new Error('開始済みの予定は編集できません。');
+  if(!existing)throw new Error('編集対象の予定が見つかりません。再読み込みしてください。');
+  if(existing.endDone)throw new Error('完了済みの予定は編集できません。');
+  if(existing.startDone)throw new Error('開始済みの予定は編集できません。終了後に新しい予定を登録してください。');
+  // Ver.4: 予定変更時は実行フラグと開始前スナップショットを必ず初期化する。
+  // これにより日時・状態を変更しても旧判定が残らない。
+  Object.assign(payload,{start_done:false,end_done:false,before_snapshot:null});
   const {error}=await supabaseClient.from('schedules').update(payload).eq('id',Number(id));if(error)throw error;
  }else{
-  payload.created_by=authSession.user.id;
+  Object.assign(payload,{created_by:authSession.user.id,start_done:false,end_done:false,before_snapshot:null});
   const {error}=await supabaseClient.from('schedules').insert(payload);if(error)throw error;
  }
- await loadRemoteSchedules();
+ await processDueSchedulesRemote(true);
+ await Promise.all([loadRemoteSchedules(),loadRemoteEmployees()]);
 }
 async function deleteScheduleRemote(id){
  const existing=data.schedules.find(x=>x.id===String(id));
@@ -122,7 +144,7 @@ function startScheduleRealtime(){
  if(!supabaseClient)return;
  if(scheduleRealtimeChannel)supabaseClient.removeChannel(scheduleRealtimeChannel);
  scheduleRealtimeChannel=supabaseClient.channel('yamaju-schedules').on('postgres_changes',{event:'*',schema:'public',table:'schedules'},async()=>{
-  try{await loadRemoteSchedules();if(currentView==='schedule')render();}catch(err){console.error(err)}
+  try{await Promise.all([loadRemoteSchedules(),loadRemoteEmployees()]);render();}catch(err){console.error(err)}
  }).subscribe(status=>{scheduleRealtimeState=status;});
 }
 function localDateParts(iso){
@@ -148,8 +170,10 @@ async function refreshRemoteState(forceRender=true){
  if(!remoteMode||!supabaseClient||remoteRefreshBusy)return;
  remoteRefreshBusy=true;
  try{
-  await loadRemoteEmployees();
-  await loadRemoteSchedules();
+  // Ver.4: Supabase Cronが主処理。開いている端末も補助的に同じDB関数を実行し、
+  // Cron遅延・一時停止時でも開始/終了を収束させる。
+  await processDueSchedulesRemote(false);
+  await Promise.all([loadRemoteEmployees(),loadRemoteSchedules()]);
   if(forceRender)render();
  }catch(err){console.error('remote refresh failed',err)}
  finally{remoteRefreshBusy=false;}
@@ -300,7 +324,7 @@ function openSchedule(id=''){
  if(s?.endDone)return alert('完了済みの予定は編集できません。');
  const sp=s?localDateParts(s.startAt):{date:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,time:'09:00'};
  const ep=s?localDateParts(s.endAt):{time:'10:00'};
- $('#scheduleId').value=id;$('#scheduleDate').value=sp.date;$('#scheduleStart').value=sp.time;$('#scheduleEnd').value=ep.time;$('#scheduleEmployee').value=s?.employeeId||data.settings.currentUserId||data.employees[0]?.id;fillStatusSelect($('#scheduleStatus'),s?.status||activeStatusNames()[0]||'在席',true);$('#scheduleDestination').value=s?.destination||'';$('#schedulePurpose').value=s?.purpose||'';$('#schedulePhone').value=s?.phone||'later';$('#scheduleAfter').value=s?.after||'present';$('#scheduleDirect').checked=!!s?.direct;$('#scheduleGoHome').checked=!!s?.goHome;$('#scheduleMemo').value=s?.memo||'';$('#scheduleDialog').showModal();
+ $('#scheduleDialogTitle').textContent=s?'予定を編集':'予定を登録';$('#saveScheduleBtn').textContent=s?'保存':'登録';$('#scheduleId').value=id;$('#scheduleDate').value=sp.date;$('#scheduleStart').value=sp.time;$('#scheduleEnd').value=ep.time;$('#scheduleEmployee').value=s?.employeeId||data.settings.currentUserId||data.employees[0]?.id;fillStatusSelect($('#scheduleStatus'),s?.status||activeStatusNames()[0]||'在席',true);$('#scheduleDestination').value=s?.destination||'';$('#schedulePurpose').value=s?.purpose||'';$('#schedulePhone').value=s?.phone||'later';$('#scheduleAfter').value=s?.after||'present';$('#scheduleDirect').checked=!!s?.direct;$('#scheduleGoHome').checked=!!s?.goHome;$('#scheduleMemo').value=s?.memo||'';$('#scheduleDialog').showModal();
 }
 $('#saveScheduleBtn').addEventListener('click',async ev=>{
  ev.preventDefault();const btn=$('#saveScheduleBtn');btn.disabled=true;
