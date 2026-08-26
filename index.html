@@ -124,6 +124,22 @@
     </form>
   </dialog>
 
+  <dialog id="employeeBulkDialog" class="wide-modal bulk-employee-modal">
+    <form id="employeeBulkForm" method="dialog" class="dialog-form">
+      <div class="dialog-title"><div><div class="eyebrow">BULK EMPLOYEE IMPORT</div><h2>社員CSV一括登録</h2></div><button type="button" value="cancel" class="icon-btn" aria-label="閉じる">×</button></div>
+      <p class="help">Excelテンプレートを入力後、「CSV UTF-8（コンマ区切り）」で保存して読み込んでください。登録前に内容を検査し、エラー行は登録しません。</p>
+      <div class="bulk-toolbar">
+        <label class="file-picker">CSVファイル<input id="bulkEmployeeFile" type="file" accept=".csv,text/csv" /></label>
+        <button type="button" id="downloadBulkCsvTemplateBtn" class="secondary">CSVひな形</button>
+      </div>
+      <div id="bulkEmployeeNotice" class="notice" hidden></div>
+      <div id="bulkEmployeeSummary" class="bulk-summary"></div>
+      <div class="bulk-preview-wrap"><table class="bulk-preview-table"><thead><tr><th>No.</th><th>ログインID</th><th>氏名</th><th>部署</th><th>職種</th><th>権限</th><th>判定</th></tr></thead><tbody id="bulkEmployeePreview"></tbody></table></div>
+      <div id="bulkEmployeeProgress" class="bulk-progress" hidden><div class="bulk-progress-track"><span id="bulkEmployeeProgressBar"></span></div><div id="bulkEmployeeProgressText"></div></div>
+      <div class="dialog-actions"><button type="button" id="downloadBulkErrorsBtn" class="secondary" hidden>エラーCSVを保存</button><button type="button" value="cancel" class="secondary">キャンセル</button><button type="button" id="runBulkEmployeeBtn" class="primary" disabled>一括登録</button></div>
+    </form>
+  </dialog>
+
   <dialog id="profileDialog" class="profile-modal">
     <form method="dialog" class="dialog-form">
       <div class="dialog-title"><div><div class="eyebrow">MY BOARD</div><h2>表示設定</h2></div><button type="button" value="cancel" class="icon-btn" aria-label="閉じる">×</button></div>
@@ -161,6 +177,7 @@
             <h3>社員管理</h3>
             <p class="help">社員アカウントの追加・修正・無効化・再開・削除を行います。ログインIDと認証アカウントも同時に管理されます。</p>
           </div>
+          <button type="button" id="adminBulkEmployeeBtn" class="secondary">CSV一括登録</button>
           <button type="button" id="adminAddEmployeeBtn" class="primary">＋ 社員を追加</button>
         </div>
         <div id="employeeAdminNotice" class="notice" hidden></div>
@@ -211,7 +228,7 @@
     </form>
   </dialog>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="supabase-config.js?v=3.2.0"></script>
-  <script src="app.js?v=3.2.0"></script>
+  <script src="supabase-config.js?v=3.3.0"></script>
+  <script src="app.js?v=3.3.0"></script>
 </body>
 </html>

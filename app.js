@@ -1,4 +1,4 @@
-// Ver.3.2 Supabase authentication / shared current status / employee + department + job master administration
+// Ver.3.3 Supabase authentication / employee masters / CSV bulk employee registration
 let supabaseClient=null;
 let authSession=null;
 let currentEmployeeProfile=null;
@@ -240,6 +240,100 @@ function openEmployeeManage(employeeId=null){
  $('#employeeDialog').showModal();
 }
 $('#adminAddEmployeeBtn')?.addEventListener('click',()=>openEmployeeManage());
+
+// ---- CSV bulk employee registration ---------------------------------------
+let bulkEmployeeRows=[];
+let bulkEmployeeErrors=[];
+const BULK_HEADER_ALIASES={
+ login_id:['login_id','ログインID','ログインid','ID','id'],
+ password:['password','初期パスワード','パスワード'],
+ name:['name','氏名','社員名','名前'],
+ department:['department','部署'],
+ job_type:['job_type','職種','jobtype'],
+ role:['role','権限']
+};
+function normalizeHeader(v=''){return String(v).replace(/^\uFEFF/,'').trim().toLowerCase().replace(/\s+/g,'')}
+function parseCsvText(text){
+ const rows=[];let row=[],field='',quoted=false;const src=String(text||'').replace(/^\uFEFF/,'');
+ for(let i=0;i<src.length;i++){
+  const c=src[i];
+  if(quoted){if(c==='"'&&src[i+1]==='"'){field+='"';i++;}else if(c==='"')quoted=false;else field+=c;}
+  else if(c==='"')quoted=true;
+  else if(c===','){row.push(field);field='';}
+  else if(c==='\n'){row.push(field);rows.push(row);row=[];field='';}
+  else if(c!=='\r')field+=c;
+ }
+ if(field!==''||row.length){row.push(field);rows.push(row)}
+ return rows.filter(r=>r.some(v=>String(v).trim()!==''));
+}
+function mapBulkHeaders(headers){
+ const normalized=headers.map(normalizeHeader),map={};
+ for(const [key,aliases] of Object.entries(BULK_HEADER_ALIASES)){
+  const set=new Set(aliases.map(normalizeHeader));map[key]=normalized.findIndex(h=>set.has(h));
+ }
+ return map;
+}
+function normalizeBulkRole(v=''){const x=String(v).trim().toLowerCase();if(['admin','管理者','管理'].includes(x))return'admin';if(['user','一般','一般ユーザー','一般user'].includes(x)||x==='')return'user';return x}
+function validateBulkRows(rawRows){
+ if(!rawRows.length)return {rows:[],fatal:'CSVにデータがありません。'};
+ const map=mapBulkHeaders(rawRows[0]),required=['login_id','password','name','department'];
+ const missing=required.filter(k=>map[k]<0);if(missing.length)return {rows:[],fatal:`必須列がありません：${missing.join(', ')}`};
+ const activeDeps=new Set(activeMasterNames(departmentMasterRows)),activeJobs=new Set(activeMasterNames(jobTypeMasterRows));
+ const existingIds=new Set(employeeAdminRows.map(e=>loginIdFromEmail(e.email).toLowerCase()));const seen=new Set();
+ const rows=rawRows.slice(1).map((r,i)=>{
+  const get=k=>map[k]>=0?String(r[map[k]]??'').trim():'';
+  const obj={rowNo:i+2,login_id:get('login_id').toLowerCase(),password:get('password'),name:get('name'),department:get('department'),job_type:get('job_type'),role:normalizeBulkRole(get('role')),errors:[],status:'pending'};
+  if(!obj.login_id)obj.errors.push('ログインID必須');
+  else if(!/^[a-z0-9._-]+$/i.test(obj.login_id))obj.errors.push('ログインIDは半角英数字 . _ - のみ');
+  else if(existingIds.has(obj.login_id))obj.errors.push('既存IDと重複');
+  else if(seen.has(obj.login_id))obj.errors.push('CSV内でID重複');
+  seen.add(obj.login_id);
+  if(obj.password.length<8)obj.errors.push('パスワード8文字以上');
+  if(!obj.name)obj.errors.push('氏名必須');
+  if(!obj.department)obj.errors.push('部署必須');else if(!activeDeps.has(obj.department))obj.errors.push('部署マスタにありません');
+  if(obj.job_type&&!activeJobs.has(obj.job_type))obj.errors.push('職種マスタにありません');
+  if(!['user','admin'].includes(obj.role))obj.errors.push('権限はuser/admin');
+  obj.status=obj.errors.length?'error':'ready';return obj;
+ }).filter(r=>r.login_id||r.name||r.department||r.password||r.job_type);
+ return {rows,fatal:''};
+}
+function setBulkEmployeeNotice(message='',isError=false){const n=$('#bulkEmployeeNotice');if(!n)return;n.hidden=!message;n.textContent=message;n.classList.toggle('error-notice',!!isError)}
+function renderBulkEmployeePreview(){
+ const body=$('#bulkEmployeePreview'),summary=$('#bulkEmployeeSummary'),run=$('#runBulkEmployeeBtn');if(!body)return;
+ const valid=bulkEmployeeRows.filter(r=>r.status==='ready').length,errors=bulkEmployeeRows.filter(r=>r.status==='error').length,success=bulkEmployeeRows.filter(r=>r.status==='success').length,failed=bulkEmployeeRows.filter(r=>r.status==='failed').length;
+ summary.textContent=bulkEmployeeRows.length?`読込 ${bulkEmployeeRows.length}件｜登録可能 ${valid}件｜入力エラー ${errors}件${success||failed?`｜成功 ${success}件｜登録失敗 ${failed}件`:''}`:'';
+ body.innerHTML=bulkEmployeeRows.slice(0,100).map(r=>`<tr class="bulk-row-${r.status}"><td>${r.rowNo}</td><td>${esc(r.login_id)}</td><td>${esc(r.name)}</td><td>${esc(r.department)}</td><td>${esc(r.job_type||'―')}</td><td>${r.role==='admin'?'管理者':'一般'}</td><td>${r.status==='success'?'登録済':r.status==='failed'?`失敗：${esc(r.runError||'')}`:r.errors.length?esc(r.errors.join(' / ')):'OK'}</td></tr>`).join('');
+ run.disabled=!valid;$('#downloadBulkErrorsBtn').hidden=!(errors||failed);
+}
+function openBulkEmployeeImport(){
+ if(!isCurrentAdmin())return alert('管理者のみ利用できます。');
+ bulkEmployeeRows=[];bulkEmployeeErrors=[];$('#bulkEmployeeFile').value='';setBulkEmployeeNotice();$('#bulkEmployeeProgress').hidden=true;renderBulkEmployeePreview();$('#employeeBulkDialog').showModal();
+}
+$('#adminBulkEmployeeBtn')?.addEventListener('click',openBulkEmployeeImport);
+$('#bulkEmployeeFile')?.addEventListener('change',async ev=>{
+ const file=ev.target.files?.[0];bulkEmployeeRows=[];setBulkEmployeeNotice();if(!file){renderBulkEmployeePreview();return;}
+ try{const text=await file.text(),result=validateBulkRows(parseCsvText(text));if(result.fatal){setBulkEmployeeNotice(result.fatal,true);renderBulkEmployeePreview();return;}bulkEmployeeRows=result.rows;renderBulkEmployeePreview();if(!bulkEmployeeRows.length)setBulkEmployeeNotice('登録対象のデータ行がありません。',true);}
+ catch(err){console.error(err);setBulkEmployeeNotice('CSVを読み込めませんでした。CSV UTF-8形式か確認してください。',true);}
+});
+function bulkTemplateCsv(){return '\uFEFFログインID,初期パスワード,氏名,部署,職種,権限\r\n';}
+function downloadTextFile(text,name,type='text/csv;charset=utf-8'){const blob=new Blob([text],{type}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),500)}
+$('#downloadBulkCsvTemplateBtn')?.addEventListener('click',()=>downloadTextFile(bulkTemplateCsv(),'山十_社員一括登録テンプレート.csv'));
+$('#downloadBulkErrorsBtn')?.addEventListener('click',()=>{
+ const bad=bulkEmployeeRows.filter(r=>r.status==='error'||r.status==='failed');let csv='\uFEFFログインID,初期パスワード,氏名,部署,職種,権限,エラー\r\n';
+ const q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';csv+=bad.map(r=>[r.login_id,r.password,r.name,r.department,r.job_type,r.role==='admin'?'admin':'user',r.status==='failed'?(r.runError||'登録失敗'):r.errors.join(' / ')].map(q).join(',')).join('\r\n');downloadTextFile(csv,'山十_社員一括登録_エラー.csv');
+});
+$('#runBulkEmployeeBtn')?.addEventListener('click',async()=>{
+ const targets=bulkEmployeeRows.filter(r=>r.status==='ready');if(!targets.length)return;if(!confirm(`${targets.length}名を一括登録します。よろしいですか？`))return;
+ const btn=$('#runBulkEmployeeBtn');btn.disabled=true;$('#bulkEmployeeProgress').hidden=false;let done=0,ok=0,ng=0;
+ for(const r of targets){
+  $('#bulkEmployeeProgressText').textContent=`${done}/${targets.length}件 処理中…`;$('#bulkEmployeeProgressBar').style.width=`${Math.round(done/targets.length*100)}%`;
+  try{await employeeAdminCall('create',{email:loginEmailFromId(r.login_id),password:r.password,name:r.name,department:r.department,job_type:r.job_type||null,role:r.role});r.status='success';ok++;}
+  catch(err){console.error(err);r.status='failed';r.runError=err.message||'登録に失敗しました。';ng++;}
+  done++;$('#bulkEmployeeProgressText').textContent=`${done}/${targets.length}件 完了`;$('#bulkEmployeeProgressBar').style.width=`${Math.round(done/targets.length*100)}%`;renderBulkEmployeePreview();
+ }
+ setBulkEmployeeNotice(`一括登録が完了しました。成功 ${ok}件／失敗 ${ng}件`,ng>0);await refreshEmployeeAdmin();await loadRemoteEmployees();render();renderBulkEmployeePreview();btn.disabled=false;
+});
+
 $('#saveEmployeeBtn').addEventListener('click',async ev=>{
  ev.preventDefault();const id=$('#employeeManageId').value,loginId=$('#newLoginId').value.trim().toLowerCase(),password=$('#newPassword').value,name=$('#newName').value.trim(),department=$('#newDepartment').value.trim(),jobType=$('#newOccupation').value.trim(),role=$('#newAccessRole').value;
  if(!loginId||!name||!department)return alert('ログインID・氏名・部署を入力してください。');
