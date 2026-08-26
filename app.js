@@ -1,4 +1,4 @@
-// Ver.3.4.1 shared schedules / resilient multi-device sync
+// Ver.3.4.2 shared schedules / display-board resilient multi-device sync
 let supabaseClient=null;
 let authSession=null;
 let currentEmployeeProfile=null;
@@ -9,6 +9,10 @@ let statusRealtimeState='CLOSED';
 let scheduleRealtimeState='CLOSED';
 let remoteRefreshBusy=false;
 let remoteRefreshTimer=null;
+let realtimeHealthTimer=null;
+const NORMAL_REFRESH_MS=15000;
+const MONITOR_REFRESH_MS=5000;
+const REALTIME_HEALTH_MS=30000;
 let departmentMasterRows=[];
 let jobTypeMasterRows=[];
 
@@ -150,13 +154,41 @@ async function refreshRemoteState(forceRender=true){
  }catch(err){console.error('remote refresh failed',err)}
  finally{remoteRefreshBusy=false;}
 }
-function startRemoteRefreshFallback(){
+function currentRefreshMs(){
+ return document.body.classList.contains('monitor')?MONITOR_REFRESH_MS:NORMAL_REFRESH_MS;
+}
+function scheduleRemoteRefresh(){
  if(remoteRefreshTimer)clearInterval(remoteRefreshTimer);
- remoteRefreshTimer=setInterval(()=>refreshRemoteState(true),15000);
- const refreshNow=()=>refreshRemoteState(true);
+ remoteRefreshTimer=setInterval(()=>refreshRemoteState(true),currentRefreshMs());
+}
+async function ensureRealtimeHealthy(){
+ if(!remoteMode||!supabaseClient||document.hidden)return;
+ if(statusRealtimeState!=='SUBSCRIBED'){
+  try{startStatusRealtime();}catch(err){console.error('status realtime reconnect failed',err)}
+ }
+ if(scheduleRealtimeState!=='SUBSCRIBED'){
+  try{startScheduleRealtime();}catch(err){console.error('schedule realtime reconnect failed',err)}
+ }
+}
+function startRemoteRefreshFallback(){
+ scheduleRemoteRefresh();
+ if(realtimeHealthTimer)clearInterval(realtimeHealthTimer);
+ realtimeHealthTimer=setInterval(ensureRealtimeHealthy,REALTIME_HEALTH_MS);
+ const refreshNow=()=>{refreshRemoteState(true);ensureRealtimeHealthy();};
  window.addEventListener('focus',refreshNow);
  window.addEventListener('online',refreshNow);
  document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshNow();});
+}
+function enterMonitorMode(){
+ document.body.classList.add('monitor');
+ scheduleRemoteRefresh();
+ refreshRemoteState(true);
+ ensureRealtimeHealthy();
+}
+function exitMonitorMode(){
+ document.body.classList.remove('monitor');
+ scheduleRemoteRefresh();
+ refreshRemoteState(true);
 }
 async function handleAuthenticated(session){
  authSession=session;
@@ -174,7 +206,7 @@ async function bootAuth(){
   catch(e){console.error(e);if(err)err.textContent='ログインIDまたはパスワードを確認してください。';}
   finally{btn.disabled=false;btn.textContent='ログイン';}
  });
- document.querySelector('#logoutBtn')?.addEventListener('click',async()=>{if(remoteRefreshTimer){clearInterval(remoteRefreshTimer);remoteRefreshTimer=null;}if(statusRealtimeChannel)await supabaseClient.removeChannel(statusRealtimeChannel);if(scheduleRealtimeChannel)await supabaseClient.removeChannel(scheduleRealtimeChannel);await supabaseClient.auth.signOut();authSession=null;currentEmployeeProfile=null;remoteMode=false;showLogin('ログアウトしました。');});
+ document.querySelector('#logoutBtn')?.addEventListener('click',async()=>{if(remoteRefreshTimer){clearInterval(remoteRefreshTimer);remoteRefreshTimer=null;}if(realtimeHealthTimer){clearInterval(realtimeHealthTimer);realtimeHealthTimer=null;}if(statusRealtimeChannel)await supabaseClient.removeChannel(statusRealtimeChannel);if(scheduleRealtimeChannel)await supabaseClient.removeChannel(scheduleRealtimeChannel);await supabaseClient.auth.signOut();authSession=null;currentEmployeeProfile=null;remoteMode=false;showLogin('ログアウトしました。');});
  if(!supabaseConfigured()){showLogin('初回設定：supabase-config.js にPublishable keyを設定してください。');return;}
  if(!window.supabase?.createClient){showLogin('Supabaseライブラリを読み込めませんでした。ネットワークを確認してください。');return;}
  supabaseClient=window.supabase.createClient(window.YAMAJU_SUPABASE.url,window.YAMAJU_SUPABASE.publishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}});
@@ -512,8 +544,8 @@ function setupDialogSafety(){
   });
 }
 
-['searchInput','departmentFilter','occupationFilter','statusFilter'].forEach(id=>$('#'+id).addEventListener(id==='searchInput'?'input':'change',render));document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click',()=>{currentView=b.dataset.view;render()}));$('#monitorBtn').addEventListener('click',()=>document.body.classList.add('monitor'));
-$('#exitMonitorBtn').addEventListener('click',()=>document.body.classList.remove('monitor'));
-document.addEventListener('keydown',(e)=>{if(e.key==='Escape'&&document.body.classList.contains('monitor'))document.body.classList.remove('monitor')});
+['searchInput','departmentFilter','occupationFilter','statusFilter'].forEach(id=>$('#'+id).addEventListener(id==='searchInput'?'input':'change',render));document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click',()=>{currentView=b.dataset.view;render()}));$('#monitorBtn').addEventListener('click',enterMonitorMode);
+$('#exitMonitorBtn').addEventListener('click',exitMonitorMode);
+document.addEventListener('keydown',(e)=>{if(e.key==='Escape'&&document.body.classList.contains('monitor'))exitMonitorMode()});
 setInterval(autoSwitch,15000);
 bootAuth();
