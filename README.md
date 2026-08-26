@@ -1,6 +1,11 @@
-# 山十 行先予定表 Ver.3.4
+# 山十 行先予定表 Ver.3.4.1
 
-## Ver.3.4 の主な変更
+## Ver.3.4.1 の主な変更
+
+- employee_status のRealtimeに加えて15秒ごとの自動再取得を追加
+- PC/スマホでRealtime接続が一時的に切れても状態を再同期
+- ウィンドウ復帰・オンライン復帰時にも即再取得
+- schedules / employee_status のRealtime公開をSQLで再確認可能
 
 - 予定登録を端末内 `localStorage` から Supabase の `schedules` テーブルへ移行
 - PC・スマホで予定を共有

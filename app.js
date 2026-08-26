@@ -1,10 +1,14 @@
-// Ver.3.3 Supabase authentication / employee masters / CSV bulk employee registration
+// Ver.3.4.1 shared schedules / resilient multi-device sync
 let supabaseClient=null;
 let authSession=null;
 let currentEmployeeProfile=null;
 let statusRealtimeChannel=null;
 let scheduleRealtimeChannel=null;
 let remoteMode=false;
+let statusRealtimeState='CLOSED';
+let scheduleRealtimeState='CLOSED';
+let remoteRefreshBusy=false;
+let remoteRefreshTimer=null;
 let departmentMasterRows=[];
 let jobTypeMasterRows=[];
 
@@ -115,7 +119,7 @@ function startScheduleRealtime(){
  if(scheduleRealtimeChannel)supabaseClient.removeChannel(scheduleRealtimeChannel);
  scheduleRealtimeChannel=supabaseClient.channel('yamaju-schedules').on('postgres_changes',{event:'*',schema:'public',table:'schedules'},async()=>{
   try{await loadRemoteSchedules();if(currentView==='schedule')render();}catch(err){console.error(err)}
- }).subscribe();
+ }).subscribe(status=>{scheduleRealtimeState=status;});
 }
 function localDateParts(iso){
  const d=new Date(iso||Date.now());const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0'),h=String(d.getHours()).padStart(2,'0'),min=String(d.getMinutes()).padStart(2,'0');
@@ -134,11 +138,29 @@ function startStatusRealtime(){
  if(statusRealtimeChannel)supabaseClient.removeChannel(statusRealtimeChannel);
  statusRealtimeChannel=supabaseClient.channel('yamaju-employee-status').on('postgres_changes',{event:'*',schema:'public',table:'employee_status'},async()=>{
   try{await loadRemoteEmployees();render();}catch(err){console.error(err)}
- }).subscribe();
+ }).subscribe(status=>{statusRealtimeState=status;});
+}
+async function refreshRemoteState(forceRender=true){
+ if(!remoteMode||!supabaseClient||remoteRefreshBusy)return;
+ remoteRefreshBusy=true;
+ try{
+  await loadRemoteEmployees();
+  await loadRemoteSchedules();
+  if(forceRender)render();
+ }catch(err){console.error('remote refresh failed',err)}
+ finally{remoteRefreshBusy=false;}
+}
+function startRemoteRefreshFallback(){
+ if(remoteRefreshTimer)clearInterval(remoteRefreshTimer);
+ remoteRefreshTimer=setInterval(()=>refreshRemoteState(true),15000);
+ const refreshNow=()=>refreshRemoteState(true);
+ window.addEventListener('focus',refreshNow);
+ window.addEventListener('online',refreshNow);
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshNow();});
 }
 async function handleAuthenticated(session){
  authSession=session;
- try{await loadMasterData();await loadRemoteEmployees();await loadRemoteSchedules();showApp();render();startStatusRealtime();startScheduleRealtime();}
+ try{await loadMasterData();await loadRemoteEmployees();await loadRemoteSchedules();showApp();render();startStatusRealtime();startScheduleRealtime();startRemoteRefreshFallback();}
  catch(err){console.error(err);await supabaseClient.auth.signOut();showLogin(err.message||'社員情報の取得に失敗しました。');}
 }
 async function bootAuth(){
@@ -152,7 +174,7 @@ async function bootAuth(){
   catch(e){console.error(e);if(err)err.textContent='ログインIDまたはパスワードを確認してください。';}
   finally{btn.disabled=false;btn.textContent='ログイン';}
  });
- document.querySelector('#logoutBtn')?.addEventListener('click',async()=>{if(statusRealtimeChannel)await supabaseClient.removeChannel(statusRealtimeChannel);if(scheduleRealtimeChannel)await supabaseClient.removeChannel(scheduleRealtimeChannel);await supabaseClient.auth.signOut();authSession=null;currentEmployeeProfile=null;remoteMode=false;showLogin('ログアウトしました。');});
+ document.querySelector('#logoutBtn')?.addEventListener('click',async()=>{if(remoteRefreshTimer){clearInterval(remoteRefreshTimer);remoteRefreshTimer=null;}if(statusRealtimeChannel)await supabaseClient.removeChannel(statusRealtimeChannel);if(scheduleRealtimeChannel)await supabaseClient.removeChannel(scheduleRealtimeChannel);await supabaseClient.auth.signOut();authSession=null;currentEmployeeProfile=null;remoteMode=false;showLogin('ログアウトしました。');});
  if(!supabaseConfigured()){showLogin('初回設定：supabase-config.js にPublishable keyを設定してください。');return;}
  if(!window.supabase?.createClient){showLogin('Supabaseライブラリを読み込めませんでした。ネットワークを確認してください。');return;}
  supabaseClient=window.supabase.createClient(window.YAMAJU_SUPABASE.url,window.YAMAJU_SUPABASE.publishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}});
