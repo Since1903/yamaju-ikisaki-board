@@ -1,4 +1,4 @@
-// Ver.5.1.3 stable pointer board layout editor / multi-day full-day leave / holiday board / overlap priority / multi-device sync
+// Ver.5.1.4 board-interactive layout editor / multi-day full-day leave / holiday board / overlap priority / multi-device sync
 let supabaseClient=null;
 let authSession=null;
 let currentEmployeeProfile=null;
@@ -754,7 +754,7 @@ $('#profileBtn').addEventListener('click',openProfile);
 $('#closeLayoutEditorBtn')?.addEventListener('click',()=>closeLayoutEditor(false));
 $('#cancelLayoutEditorBtn')?.addEventListener('click',()=>closeLayoutEditor(false));
 $('#saveLayoutEditorBtn')?.addEventListener('click',()=>closeLayoutEditor(true));
-$('#layoutEditorBackdrop')?.addEventListener('click',()=>closeLayoutEditor(false));
+// Ver.5.1.4: backdrop is visual only; board must remain clickable/draggable during layout edit.
 $('#layoutMemberSearch')?.addEventListener('input',renderLayoutMemberList);
 $('#layoutDepartmentFilter')?.addEventListener('change',renderLayoutMemberList);
 $('#layoutBoardColumns')?.addEventListener('change',ev=>{data.settings.boardColumns=ev.target.value||'auto';render();});
