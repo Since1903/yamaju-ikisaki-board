@@ -240,6 +240,8 @@ async function bootAuth(){
 }
 
 const KEY='yamaju-board-v2';
+const HOLIDAY_STATUS_NAMES=['全休','午前休','午後休','時間休'];
+const LEGACY_HOLIDAY_STATUS='休み';
 const DEFAULT_STATUSES=[
  {id:'present',name:'在席',color:'#bfe7c9',active:true,order:1,useReturn:false,useDestination:true,defaultDestination:'本社'},
  {id:'out',name:'外出',color:'#31b57b',active:true,order:2,useReturn:true,useDestination:true,defaultDestination:''},
@@ -307,11 +309,19 @@ function holidayDateLabel(key){
  const dt=new Date(Date.UTC(y,m-1,d,12));const wd=new Intl.DateTimeFormat('ja-JP',{weekday:'short',timeZone:'Asia/Tokyo'}).format(dt);
  return `${m}/${d}（${wd}）`;
 }
+function isHolidayStatus(name){return HOLIDAY_STATUS_NAMES.includes(name)||name===LEGACY_HOLIDAY_STATUS}
+function holidayTimeLabel(s){
+ if(s.status==='全休'||s.status===LEGACY_HOLIDAY_STATUS)return '1日';
+ if(s.status==='午前休')return '午前';
+ if(s.status==='午後休')return '午後';
+ const a=localDateParts(s.startAt).time,b=localDateParts(s.endAt).time;
+ return `${a}～${b}`;
+}
 function holidayScheduleRows(){
  const today=jstDateKey(new Date()),seen=new Map();
  [...data.schedules]
-  .filter(s=>s.status==='休み')
-  .forEach(s=>{const key=jstDateKey(s.startAt);if(!key||key<today)return;const k=`${key}|${s.employeeId}`;const prev=seen.get(k);if(!prev||String(s.startAt).localeCompare(String(prev.startAt))<0)seen.set(k,{...s,dateKey:key});});
+  .filter(s=>isHolidayStatus(s.status))
+  .forEach(s=>{const key=jstDateKey(s.startAt);if(!key||key<today)return;const k=`${key}|${s.employeeId}|${s.status}|${s.startAt}|${s.endAt}`;if(!seen.has(k))seen.set(k,{...s,dateKey:key});});
  return [...seen.values()].sort((a,b)=>a.dateKey.localeCompare(b.dateKey)||String(a.startAt).localeCompare(String(b.startAt))||String(a.employeeId).localeCompare(String(b.employeeId),'ja'));
 }
 function render(){
@@ -328,7 +338,7 @@ function renderBoard(board){
 }
 function renderHolidayBoard(board){
  const rows=holidayScheduleRows();board.className='holiday-board';
- board.innerHTML=`<section class="holiday-board-card card"><div class="holiday-board-head"><div><div class="eyebrow">HOLIDAY BOARD</div><h2>休み掲示板</h2></div><span class="holiday-count">${rows.length}件</span></div><div class="holiday-table"><div class="holiday-row holiday-header"><span>日付</span><span>氏名</span></div>${rows.length?rows.map(s=>{const e=data.employees.find(x=>x.id===s.employeeId);return `<div class="holiday-row"><strong class="holiday-date">${esc(holidayDateLabel(s.dateKey))}</strong><strong class="holiday-name">${esc(e?.name||'不明')}</strong></div>`}).join(''):'<div class="holiday-empty">登録されている休み予定はありません。</div>'}</div></section>`;
+ board.innerHTML=`<section class="holiday-board-card card"><div class="holiday-board-head"><div><div class="eyebrow">HOLIDAY BOARD</div><h2>休み掲示板</h2></div><span class="holiday-count">${rows.length}件</span></div><div class="holiday-table"><div class="holiday-row holiday-header"><span>日付</span><span>休みの種類</span><span>時間</span><span>氏名</span></div>${rows.length?rows.map(s=>{const e=data.employees.find(x=>x.id===s.employeeId);const kind=s.status===LEGACY_HOLIDAY_STATUS?'全休':s.status;return `<div class="holiday-row"><strong class="holiday-date">${esc(holidayDateLabel(s.dateKey))}</strong><span class="holiday-kind">${esc(kind)}</span><span class="holiday-time">${esc(holidayTimeLabel(s))}</span><strong class="holiday-name">${esc(e?.name||'不明')}</strong></div>`}).join(''):'<div class="holiday-empty">登録されている休み予定はありません。</div>'}</div></section>`;
  $('#summary').textContent=`休み予定 ${rows.length}件`;
 }
 function renderHistory(board){
@@ -344,13 +354,20 @@ function applyEditRules(){const st=$('#editStatus').value,sm=statusByName(st);if
 function openEdit(id){const e=data.employees.find(x=>x.id===id);$('#editEmployeeId').value=id;$('#editTitle').textContent=e.name;fillStatusSelect($('#editStatus'),e.status,true);$('#editDestination').value=e.destination;$('#editPurpose').value=e.purpose;$('#editReturn').value=e.returnTime;$('#editPhone').value=e.phone;$('#editDirect').checked=e.direct;$('#editGoHome').checked=e.goHome;$('#editMemo').value=e.memo||'';$('#editDialog').showModal()}
 $('#editStatus').addEventListener('change',applyEditRules);$('#editGoHome').addEventListener('change',applyEditRules);
 $('#saveEditBtn').addEventListener('click',async ev=>{ev.preventDefault();applyEditRules();const id=$('#editEmployeeId').value,e=data.employees.find(x=>x.id===id),before=e.status;Object.assign(e,{status:$('#editStatus').value,destination:$('#editDestination').value.trim(),purpose:$('#editPurpose').value.trim(),returnTime:$('#editReturn').value,phone:$('#editPhone').value,direct:$('#editDirect').checked,goHome:$('#editGoHome').checked,memo:$('#editMemo').value.trim()});pushHistory('manual',e,{before,after:e.status,destination:e.destination});save();try{await saveEmployeeStatusRemote(e);$('#editDialog').close();render();}catch(err){console.error(err);alert('Supabaseへの保存に失敗しました。通信状態を確認してください。');}});
+function applyScheduleStatusRules(){
+ const st=$('#scheduleStatus').value;
+ if(isHolidayStatus(st)){
+  $('#scheduleDestination').value='';$('#schedulePurpose').value='';$('#scheduleDirect').checked=false;$('#scheduleGoHome').checked=false;$('#schedulePhone').value='ok';$('#scheduleAfter').value='present';
+ }
+}
+$('#scheduleStatus').addEventListener('change',applyScheduleStatusRules);
 function openSchedule(id=''){
  const s=data.schedules.find(x=>x.id===String(id)),d=new Date();
  if(s?.startDone&&!s?.endDone)return alert('この予定は実行中のため編集できません。');
  if(s?.endDone)return alert('完了済みの予定は編集できません。');
  const sp=s?localDateParts(s.startAt):{date:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,time:'09:00'};
  const ep=s?localDateParts(s.endAt):{time:'10:00'};
- $('#scheduleDialogTitle').textContent=s?'予定を編集':'予定を登録';$('#saveScheduleBtn').textContent=s?'保存':'登録';$('#scheduleId').value=id;$('#scheduleDate').value=sp.date;$('#scheduleStart').value=sp.time;$('#scheduleEnd').value=ep.time;$('#scheduleEmployee').value=s?.employeeId||data.settings.currentUserId||data.employees[0]?.id;fillStatusSelect($('#scheduleStatus'),s?.status||activeStatusNames()[0]||'在席',true);$('#scheduleDestination').value=s?.destination||'';$('#schedulePurpose').value=s?.purpose||'';$('#schedulePhone').value=s?.phone||'later';$('#scheduleAfter').value=s?.after||'present';$('#scheduleDirect').checked=!!s?.direct;$('#scheduleGoHome').checked=!!s?.goHome;$('#scheduleMemo').value=s?.memo||'';$('#scheduleDialog').showModal();
+ $('#scheduleDialogTitle').textContent=s?'予定を編集':'予定を登録';$('#saveScheduleBtn').textContent=s?'保存':'登録';$('#scheduleId').value=id;$('#scheduleDate').value=sp.date;$('#scheduleStart').value=sp.time;$('#scheduleEnd').value=ep.time;$('#scheduleEmployee').value=s?.employeeId||data.settings.currentUserId||data.employees[0]?.id;fillStatusSelect($('#scheduleStatus'),s?.status||activeStatusNames()[0]||'在席',true);$('#scheduleDestination').value=s?.destination||'';$('#schedulePurpose').value=s?.purpose||'';$('#schedulePhone').value=s?.phone||'later';$('#scheduleAfter').value=s?.after||'present';$('#scheduleDirect').checked=!!s?.direct;$('#scheduleGoHome').checked=!!s?.goHome;$('#scheduleMemo').value=s?.memo||'';applyScheduleStatusRules();$('#scheduleDialog').showModal();
 }
 $('#saveScheduleBtn').addEventListener('click',async ev=>{
  ev.preventDefault();const btn=$('#saveScheduleBtn');btn.disabled=true;
