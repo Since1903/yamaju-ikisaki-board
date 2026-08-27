@@ -1,4 +1,4 @@
-// Ver.4.0 unified schedule engine / server + client fallback / multi-device sync
+// Ver.4.1 unified schedule engine / explicit overlap priority / server + client fallback / multi-device sync
 let supabaseClient=null;
 let authSession=null;
 let currentEmployeeProfile=null;

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#3a9d74" />
   <title>山十 行先予定表</title>
-  <link rel="stylesheet" href="styles.css?v=4.0" />
+  <link rel="stylesheet" href="styles.css?v=4.1" />
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -97,7 +97,7 @@
     <form id="scheduleForm" method="dialog" class="dialog-form">
       <div class="dialog-title"><div><div class="eyebrow">SERVER AUTO SWITCH V4</div><h2 id="scheduleDialogTitle">予定を登録</h2></div><button type="button" value="cancel" class="icon-btn" aria-label="閉じる">×</button></div>
       <input id="scheduleId" type="hidden" />
-      <div class="notice">Ver.4では予定の新規登録・変更・開始・終了を同じサーバー処理で管理します。Supabase Cronを主処理とし、開いている端末も補助実行するため、PC・スマホ・大型表示を同じ状態へ収束させます。</div>
+      <div class="notice">Ver.4.1では予定が重なった場合も、開始時刻が最も新しい予定を優先し、その予定の終了後はまだ有効な次順位の予定へ自動で戻ります。PC・スマホ・大型表示は同じ状態へ同期します。</div>
       <label>社員<select id="scheduleEmployee"></select></label>
       <div class="three-col"><label>日付<input id="scheduleDate" type="date" /></label><label>開始<input id="scheduleStart" type="time" /></label><label>終了<input id="scheduleEnd" type="time" /></label></div>
       <label>状態<select id="scheduleStatus"></select></label>
@@ -230,6 +230,6 @@
   </dialog>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="supabase-config.js?v=4.0"></script>
-  <script src="app.js?v=4.0"></script>
+  <script src="app.js?v=4.1"></script>
 </body>
 </html>
