@@ -1,4 +1,4 @@
-// Ver.5.1.5 sidebar self-first / board-interactive layout editor / multi-day full-day leave / holiday board / overlap priority / multi-device sync
+// Ver.5.1.6 self-always-top-left / sidebar self-first / board-interactive layout editor / multi-day full-day leave / holiday board / overlap priority / multi-device sync
 let supabaseClient=null;
 let authSession=null;
 let currentEmployeeProfile=null;
@@ -317,13 +317,17 @@ function renderFilters(){
  $('#scheduleEmployee').innerHTML=data.employees.map(e=>`<option value="${e.id}">${esc(e.name)}（${esc(e.department)} / ${esc(e.occupation)}）</option>`).join('');
 }
 function orderedVisibleEmployees(){
+ const me=String(data.settings.currentUserId||'');
  const ids=new Set((data.settings.visibleEmployeeIds||[]).map(String));
+ // Ver.5.1.6: ログイン中の自分は必ず表示対象に含める。
+ if(me) ids.add(me);
  const map=new Map(data.employees.map(e=>[String(e.id),e]));
- const order=(data.settings.employeeOrder||[]).map(String).filter(id=>map.has(id));
+ let order=(data.settings.employeeOrder||[]).map(String).filter(id=>map.has(id));
  data.employees.forEach(e=>{if(!order.includes(String(e.id)))order.push(String(e.id));});
- let list=order.filter(id=>ids.has(id)).map(id=>map.get(id));
- if(data.settings.pinSelfFirst&&!layoutEditMode){const me=String(data.settings.currentUserId||'');list.sort((a,b)=>a.id===me?-1:b.id===me?1:0);}
- return list;
+ // 自分は保存順に関係なく常に先頭（左上）。その他は保存順を維持。
+ order=order.filter(id=>id!==me);
+ if(me&&map.has(me))order.unshift(me);
+ return order.filter(id=>ids.has(id)).map(id=>map.get(id));
 }
 function defaultLocationForEmployee(e){
  const row=departmentMasterRows.find(d=>d.name===e?.department);
@@ -665,20 +669,28 @@ function renderLayoutMemberList(){
  list.querySelectorAll('.layout-member-item').forEach(btn=>btn.addEventListener('click',()=>toggleLayoutEmployee(String(btn.dataset.id))));
 }
 function toggleLayoutEmployee(id){
+ const me=String(data.settings.currentUserId||'');
+ if(id===me){showToast('自分は常に左上に表示されます。');return;}
  const ids=(data.settings.visibleEmployeeIds||[]).map(String),i=ids.indexOf(id);
  if(i>=0)ids.splice(i,1);else ids.push(id);
+ if(me&&!ids.includes(me))ids.unshift(me);
  data.settings.visibleEmployeeIds=ids;
  render();renderLayoutMemberList();
 }
 function decorateBoardForLayoutEdit(board){
  board.classList.add('layout-editing-board');
+ const me=String(data.settings.currentUserId||'');
  board.querySelectorAll('.employee-card').forEach(card=>{
   card.draggable=false;
   const id=String(card.dataset.employeeId||'');
+  const isSelf=id===me;
   const top=document.createElement('div');
-  top.className='layout-card-editor';
-  top.innerHTML='<button type="button" class="layout-card-grip" aria-label="ドラッグして並び替え" title="ドラッグして並び替え">☷</button><button type="button" class="layout-card-remove" title="表示から外す">×</button>';
+  top.className='layout-card-editor'+(isSelf?' self-fixed':'');
+  top.innerHTML=isSelf
+   ? '<span class="layout-card-fixed" title="自分は左上固定です">🔒 左上固定</span><span class="layout-card-self">自分</span>'
+   : '<button type="button" class="layout-card-grip" aria-label="ドラッグして並び替え" title="ドラッグして並び替え">☷</button><button type="button" class="layout-card-remove" title="表示から外す">×</button>';
   card.prepend(top);
+  if(isSelf)return;
   top.querySelector('.layout-card-remove').addEventListener('click',ev=>{ev.stopPropagation();toggleLayoutEmployee(id)});
   const grip=top.querySelector('.layout-card-grip');
   grip.addEventListener('pointerdown',ev=>startLayoutPointerDrag(ev,card,board));
@@ -733,12 +745,27 @@ function startLayoutPointerDrag(ev,card,board){
  document.addEventListener('pointermove',move,true);document.addEventListener('pointerup',finish,true);document.addEventListener('pointercancel',finish,true);
 }
 function syncOrderFromBoard(){
- const visibleOrder=[...document.querySelectorAll('#board .employee-card[data-employee-id]')].map(c=>String(c.dataset.employeeId));
- const rest=(data.settings.employeeOrder||[]).map(String).filter(id=>!visibleOrder.includes(id));
+ const me=String(data.settings.currentUserId||'');
+ let visibleOrder=[...document.querySelectorAll('#board .employee-card[data-employee-id]')].map(c=>String(c.dataset.employeeId));
+ visibleOrder=visibleOrder.filter(id=>id!==me);
+ if(me)visibleOrder.unshift(me);
+ const rest=(data.settings.employeeOrder||[]).map(String).filter(id=>id!==me&&!visibleOrder.includes(id));
  data.settings.employeeOrder=[...visibleOrder,...rest];
+ if(me){
+  const vis=(data.settings.visibleEmployeeIds||[]).map(String).filter(id=>id!==me);
+  data.settings.visibleEmployeeIds=[me,...vis];
+ }
 }
 function openLayoutEditor(){
  if(currentView!=='board'){currentView='board';render();}
+ const me=String(data.settings.currentUserId||'');
+ if(me){
+  const vis=(data.settings.visibleEmployeeIds||[]).map(String).filter(id=>id!==me);
+  data.settings.visibleEmployeeIds=[me,...vis];
+  const ord=(data.settings.employeeOrder||[]).map(String).filter(id=>id!==me);
+  data.settings.employeeOrder=[me,...ord];
+  data.settings.pinSelfFirst=true;
+ }
  layoutEditSnapshot=JSON.parse(JSON.stringify(data.settings));layoutEditMode=true;
  document.body.classList.add('layout-editor-open');
  $('#layoutEditor').classList.add('open');$('#layoutEditor').setAttribute('aria-hidden','false');$('#layoutEditorBackdrop').hidden=false;
@@ -762,7 +789,7 @@ $('#layoutMemberSearch')?.addEventListener('input',renderLayoutMemberList);
 $('#layoutDepartmentFilter')?.addEventListener('change',renderLayoutMemberList);
 $('#layoutBoardColumns')?.addEventListener('change',ev=>{data.settings.boardColumns=ev.target.value||'auto';render();});
 // 旧ダイアログの保存処理は互換用
-$('#saveProfileBtn')?.addEventListener('click',ev=>{ev.preventDefault();data.settings.currentUserId=$('#currentUserSelect')?.value||data.settings.currentUserId;data.settings.boardColumns=$('#boardColumns')?.value||data.settings.boardColumns||'auto';data.settings.pinSelfFirst=$('#pinSelfFirst')?.checked!==false;save();$('#profileDialog')?.close();render();showToast('表示設定を保存しました。');});
+$('#saveProfileBtn')?.addEventListener('click',ev=>{ev.preventDefault();data.settings.currentUserId=$('#currentUserSelect')?.value||data.settings.currentUserId;data.settings.boardColumns=$('#boardColumns')?.value||data.settings.boardColumns||'auto';data.settings.pinSelfFirst=true;save();$('#profileDialog')?.close();render();showToast('表示設定を保存しました。');});
 function renderStatusMaster(){
  const wrap=$('#statusMasterList'),rows=sortedStatuses(true);wrap.innerHTML=rows.map((s,i)=>`<div class="status-row ${s.active?'':'inactive'}">
    <span class="status-swatch" style="background:${s.color}"></span>

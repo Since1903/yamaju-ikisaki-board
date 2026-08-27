@@ -73,3 +73,9 @@ body.layout-editor-open .shell,body.layout-editor-open .app-header,body.layout-e
 /* Ver.5.1.5: layout editor sidebar - logged-in user */
 .layout-member-item.is-self { outline: 2px solid rgba(58,157,116,.28); outline-offset: -2px; }
 .layout-self-badge { display:inline-block; margin-left:7px; padding:2px 7px; border-radius:999px; background:#3a9d74; color:#fff; font-size:11px; font-style:normal; font-weight:700; vertical-align:middle; }
+
+
+/* Ver.5.1.6: ログイン中の自分はレイアウトの左上に常時固定 */
+.layout-card-editor.self-fixed{background:#173f36;cursor:default}
+.layout-card-fixed{font-size:12px;font-weight:800;display:flex;align-items:center;gap:5px;padding-left:4px}
+.layout-card-self{font-size:11px;font-weight:800;padding:3px 8px;border-radius:999px;background:rgba(255,255,255,.16)}
