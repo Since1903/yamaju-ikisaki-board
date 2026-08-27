@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#3a9d74" />
   <title>山十 行先予定表</title>
-  <link rel="stylesheet" href="styles.css?v=4.1" />
+  <link rel="stylesheet" href="styles.css?v=4.4" />
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -53,6 +53,7 @@
 
   <nav class="bottom-nav">
     <button class="nav-btn active" data-view="board">行先板</button>
+    <button class="nav-btn" data-view="holiday">休み掲示板</button>
     <button class="nav-btn" data-view="schedule">予定登録</button>
     <button class="nav-btn" data-view="history">履歴</button>
   </nav>
@@ -97,13 +98,13 @@
     <form id="scheduleForm" method="dialog" class="dialog-form">
       <div class="dialog-title"><div><div class="eyebrow">SERVER AUTO SWITCH V4</div><h2 id="scheduleDialogTitle">予定を登録</h2></div><button type="button" value="cancel" class="icon-btn" aria-label="閉じる">×</button></div>
       <input id="scheduleId" type="hidden" />
-      <div class="notice">Ver.4.1では予定が重なった場合も、開始時刻が最も新しい予定を優先し、その予定の終了後はまだ有効な次順位の予定へ自動で戻ります。PC・スマホ・大型表示は同じ状態へ同期します。</div>
+      <div class="notice">Ver.4.4では予定の重複優先順位・全端末同期に加え、「休み」の予定を休み掲示板へ自動表示します。休み掲示板は日付が近い順に表示し、日付を過ぎた予定は表示しません。</div>
       <label>社員<select id="scheduleEmployee"></select></label>
       <div class="three-col"><label>日付<input id="scheduleDate" type="date" /></label><label>開始<input id="scheduleStart" type="time" /></label><label>終了<input id="scheduleEnd" type="time" /></label></div>
       <label>状態<select id="scheduleStatus"></select></label>
       <label>行先<input id="scheduleDestination" /></label>
       <label>用件<input id="schedulePurpose" /></label>
-      <div class="two-col"><label>電話<select id="schedulePhone"><option value="ok">対応可</option><option value="later">折返し</option><option value="ng">対応不可</option></select></label><label>終了後<select id="scheduleAfter"><option value="present">在席・本社へ戻す</option><option value="previous">予定前の状態へ戻す</option></select></label></div>
+      <div class="two-col"><label>電話<select id="schedulePhone"><option value="ok">対応可</option><option value="later">折返し</option><option value="ng">対応不可</option></select></label><label>終了後<select id="scheduleAfter"><option value="present">在席・初期拠点へ戻す</option><option value="previous">予定前の状態へ戻す</option></select></label></div>
       <div class="checks"><label><input id="scheduleDirect" type="checkbox" /> 直行</label><label><input id="scheduleGoHome" type="checkbox" /> 直帰</label></div>
       <label>メモ<textarea id="scheduleMemo" rows="2"></textarea></label>
       <div class="dialog-actions"><button type="button" value="cancel" class="secondary">キャンセル</button><button type="button" id="saveScheduleBtn" class="primary">登録</button></div>
@@ -230,6 +231,6 @@
   </dialog>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="supabase-config.js?v=4.0"></script>
-  <script src="app.js?v=4.1"></script>
+  <script src="app.js?v=4.4"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-// Ver.4.1 unified schedule engine / explicit overlap priority / server + client fallback / multi-device sync
+// Ver.4.4 unified schedule engine / holiday board / overlap priority / server + client fallback / multi-device sync
 let supabaseClient=null;
 let authSession=null;
 let currentEmployeeProfile=null;
@@ -15,7 +15,7 @@ const MONITOR_REFRESH_MS=5000;
 const REALTIME_HEALTH_MS=30000;
 let departmentMasterRows=[];
 let jobTypeMasterRows=[];
-const APP_VERSION='4.0';
+const APP_VERSION='4.4';
 let lastScheduleProcessAt=0;
 const SCHEDULE_PROCESS_MIN_GAP_MS=4000;
 
@@ -297,13 +297,39 @@ function renderFilters(){
  $('#scheduleEmployee').innerHTML=data.employees.map(e=>`<option value="${e.id}">${esc(e.name)}（${esc(e.department)} / ${esc(e.occupation)}）</option>`).join('');
 }
 function orderedVisibleEmployees(){const ids=new Set(data.settings.visibleEmployeeIds||data.employees.map(e=>e.id));let list=data.employees.filter(e=>ids.has(e.id));const me=data.settings.currentUserId;list.sort((a,b)=>a.id===me?-1:b.id===me?1:0);return list}
-function render(){renderFilters();document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.view===currentView));const board=$('#board');if(currentView==='history')return renderHistory(board);if(currentView==='schedule')return renderSchedules(board);renderBoard(board)}
+function jstDateKey(value){
+ const d=value instanceof Date?value:new Date(value);if(Number.isNaN(d.getTime()))return '';
+ const parts=new Intl.DateTimeFormat('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(d);
+ const o=Object.fromEntries(parts.map(x=>[x.type,x.value]));return `${o.year}-${o.month}-${o.day}`;
+}
+function holidayDateLabel(key){
+ const [y,m,d]=key.split('-').map(Number);if(!y||!m||!d)return key;
+ const dt=new Date(Date.UTC(y,m-1,d,12));const wd=new Intl.DateTimeFormat('ja-JP',{weekday:'short',timeZone:'Asia/Tokyo'}).format(dt);
+ return `${m}/${d}（${wd}）`;
+}
+function holidayScheduleRows(){
+ const today=jstDateKey(new Date()),seen=new Map();
+ [...data.schedules]
+  .filter(s=>s.status==='休み')
+  .forEach(s=>{const key=jstDateKey(s.startAt);if(!key||key<today)return;const k=`${key}|${s.employeeId}`;const prev=seen.get(k);if(!prev||String(s.startAt).localeCompare(String(prev.startAt))<0)seen.set(k,{...s,dateKey:key});});
+ return [...seen.values()].sort((a,b)=>a.dateKey.localeCompare(b.dateKey)||String(a.startAt).localeCompare(String(b.startAt))||String(a.employeeId).localeCompare(String(b.employeeId),'ja'));
+}
+function render(){
+ renderFilters();document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.view===currentView));
+ const toolbar=document.querySelector('.toolbar');if(toolbar)toolbar.hidden=currentView==='holiday';
+ const board=$('#board');if(currentView==='holiday')return renderHolidayBoard(board);if(currentView==='history')return renderHistory(board);if(currentView==='schedule')return renderSchedules(board);renderBoard(board)
+}
 function renderBoard(board){
  const q=$('#searchInput').value.trim().toLowerCase(),dep=$('#departmentFilter').value,occ=$('#occupationFilter').value,st=$('#statusFilter').value;const base=orderedVisibleEmployees();
  const list=base.filter(e=>(!q||`${e.name} ${e.destination} ${e.purpose}`.toLowerCase().includes(q))&&(!dep||e.department===dep)&&(!occ||e.occupation===occ)&&(!st||e.status===st));
  board.className='board';board.innerHTML='';const t=$('#employeeCardTemplate');
  list.forEach(e=>{const n=t.content.cloneNode(true),card=n.querySelector('.employee-card'),sm=statusByName(e.status),bg=sm.color||'#fff',fg=contrast(bg);card.style.setProperty('--status-bg',bg);card.style.setProperty('--card-text',fg);n.querySelector('.employee-name').textContent=e.name;n.querySelector('.employee-meta').textContent=[e.department,e.occupation].filter(Boolean).join(' / ');n.querySelector('.status-pill').textContent=e.status;n.querySelector('.destination').textContent=sm.useDestination===false?'―':(e.destination||'―');n.querySelector('.purpose').textContent=e.purpose||' ';const shownReturn=(!sm.useReturn||e.goHome||!e.returnTime||e.returnTime==='00:00')?'―':e.returnTime;n.querySelector('.return-time').textContent=shownReturn;n.querySelector('.phone-status').textContent=phoneText(e.phone);const tags=n.querySelector('.tag-row');if(e.id===data.settings.currentUserId)tags.innerHTML+='<span class="tag">自分</span>';if(e.direct)tags.innerHTML+='<span class="tag">直行</span>';if(e.goHome)tags.innerHTML+='<span class="tag">直帰</span>';if(!sm.active)tags.innerHTML+='<span class="tag">停止中状態</span>';if(e.memo)tags.innerHTML+=`<span class="tag">${esc(e.memo)}</span>`;n.querySelector('.change-btn').addEventListener('click',()=>openEdit(e.id));board.appendChild(n)});
  $('#summary').textContent=`表示 ${list.length}名 / 登録${data.employees.length}名`;if(!list.length)board.innerHTML='<div class="empty card">該当する社員がいません</div>';
+}
+function renderHolidayBoard(board){
+ const rows=holidayScheduleRows();board.className='holiday-board';
+ board.innerHTML=`<section class="holiday-board-card card"><div class="holiday-board-head"><div><div class="eyebrow">HOLIDAY BOARD</div><h2>休み掲示板</h2></div><span class="holiday-count">${rows.length}件</span></div><div class="holiday-table"><div class="holiday-row holiday-header"><span>日付</span><span>氏名</span></div>${rows.length?rows.map(s=>{const e=data.employees.find(x=>x.id===s.employeeId);return `<div class="holiday-row"><strong class="holiday-date">${esc(holidayDateLabel(s.dateKey))}</strong><strong class="holiday-name">${esc(e?.name||'不明')}</strong></div>`}).join(''):'<div class="holiday-empty">登録されている休み予定はありません。</div>'}</div></section>`;
+ $('#summary').textContent=`休み予定 ${rows.length}件`;
 }
 function renderHistory(board){
  board.className='history-list';const rows=[...data.history].reverse();
