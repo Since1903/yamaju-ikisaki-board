@@ -1,4 +1,4 @@
-// Ver.5.1.4 board-interactive layout editor / multi-day full-day leave / holiday board / overlap priority / multi-device sync
+// Ver.5.1.5 sidebar self-first / board-interactive layout editor / multi-day full-day leave / holiday board / overlap priority / multi-device sync
 let supabaseClient=null;
 let authSession=null;
 let currentEmployeeProfile=null;
@@ -657,8 +657,11 @@ function layoutVisibleSet(){return new Set((data.settings.visibleEmployeeIds||[]
 function renderLayoutMemberList(){
  const list=$('#layoutMemberList');if(!list)return;
  const q=($('#layoutMemberSearch')?.value||'').trim().toLowerCase(),dep=$('#layoutDepartmentFilter')?.value||'',vis=layoutVisibleSet();
+ const me=String(data.settings.currentUserId||'');
  const rows=profileOrderedEmployees().filter(e=>(!q||`${e.name} ${e.department} ${e.occupation}`.toLowerCase().includes(q))&&(!dep||e.department===dep));
- list.innerHTML=rows.map(e=>`<button type="button" class="layout-member-item ${vis.has(String(e.id))?'selected':''}" data-id="${esc(e.id)}"><span><strong>${esc(e.name)}</strong><small>${esc(e.department)}${e.occupation?` / ${esc(e.occupation)}`:''}</small></span><b>${vis.has(String(e.id))?'表示中':'追加'}</b></button>`).join('')||'<div class="layout-member-empty">該当する社員がいません。</div>';
+ // サイドバーだけログイン中の本人を先頭へ固定。ほかの社員は従来の登録順を維持する。
+ rows.sort((a,b)=>String(a.id)===me?-1:String(b.id)===me?1:0);
+ list.innerHTML=rows.map(e=>`<button type="button" class="layout-member-item ${vis.has(String(e.id))?'selected':''} ${String(e.id)===me?'is-self':''}" data-id="${esc(e.id)}"><span><strong>${esc(e.name)}${String(e.id)===me?' <em class="layout-self-badge">自分</em>':''}</strong><small>${esc(e.department)}${e.occupation?` / ${esc(e.occupation)}`:''}</small></span><b>${vis.has(String(e.id))?'表示中':'追加'}</b></button>`).join('')||'<div class="layout-member-empty">該当する社員がいません。</div>';
  list.querySelectorAll('.layout-member-item').forEach(btn=>btn.addEventListener('click',()=>toggleLayoutEmployee(String(btn.dataset.id))));
 }
 function toggleLayoutEmployee(id){
