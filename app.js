@@ -313,26 +313,43 @@ function defaultLocationForEmployee(e){
  const loc=String(row?.default_location||'').replace(/^'+|'+$/g,'').trim();
  return loc||'本社';
 }
+function showToast(message,type='success'){
+ let toast=document.querySelector('#appToast');
+ if(!toast){toast=document.createElement('div');toast.id='appToast';toast.className='app-toast';toast.setAttribute('role','status');toast.setAttribute('aria-live','polite');document.body.appendChild(toast);}
+ toast.textContent=message;toast.className=`app-toast ${type} show`;
+ clearTimeout(showToast._timer);showToast._timer=setTimeout(()=>toast.classList.remove('show'),2400);
+}
 async function eraseMyStatus(){
  const me=data.employees.find(e=>e.id===data.settings.currentUserId);
- if(!me)return alert('自分の社員情報が見つかりません。');
- if(!confirm('現在の状態を消して「在席」に戻しますか？\n実行中の予定がある場合は、その予定も終了扱いにします。'))return;
+ if(!me){showToast('自分の社員情報が見つかりません。','error');return;}
  const btn=document.querySelector('.eraser-btn');if(btn)btn.disabled=true;
+ const before={...me},loc=defaultLocationForEmployee(me),nowIso=new Date().toISOString();
+ Object.assign(me,{status:'在席',destination:loc,purpose:'',returnTime:'',phone:'ok',direct:false,goHome:false,memo:''});
+ render();
  try{
-  const nowIso=new Date().toISOString();
   if(remoteMode){
-   const {data:running,error:findErr}=await supabaseClient.from('schedules').select('id').eq('employee_id',Number(me.dbId||me.id)).eq('start_done',true).eq('end_done',false).lte('start_at',nowIso).gt('end_at',nowIso);
-   if(findErr)throw findErr;
-   if(running?.length){const ids=running.map(x=>x.id);const {error:endErr}=await supabaseClient.from('schedules').update({end_done:true,updated_at:nowIso}).in('id',ids);if(endErr)throw endErr;}
+   // 在席への復帰自体を最優先で保存する。
+   await saveEmployeeStatusRemote(me);
+
+   // 実行中予定の終了処理は補助処理。失敗しても在席復帰成功をエラー扱いにしない。
+   try{
+    const {data:running,error:findErr}=await supabaseClient.from('schedules').select('id').eq('employee_id',Number(me.dbId||me.id)).eq('start_done',true).eq('end_done',false).lte('start_at',nowIso).gt('end_at',nowIso);
+    if(findErr)throw findErr;
+    if(running?.length){
+     const ids=running.map(x=>x.id);
+     const {error:endErr}=await supabaseClient.from('schedules').update({end_done:true,updated_at:nowIso}).in('id',ids);
+     if(endErr)throw endErr;
+    }
+   }catch(scheduleErr){console.warn('eraser: schedule close skipped',scheduleErr);}
+
+   try{await loadSchedulesRemote();}catch(loadErr){console.warn('eraser: schedule reload skipped',loadErr);}
   }else{
    const now=Date.now();data.schedules.forEach(s=>{if(s.employeeId===me.id&&s.startDone&&!s.endDone&&new Date(s.startAt).getTime()<=now&&new Date(s.endAt).getTime()>now)s.endDone=true;});
   }
-  const before=me.status,loc=defaultLocationForEmployee(me);
-  Object.assign(me,{status:'在席',destination:loc,purpose:'',returnTime:'',phone:'ok',direct:false,goHome:false,memo:''});
-  pushHistory('manual',me,{before,after:'在席',destination:loc});save();
-  if(remoteMode){await saveEmployeeStatusRemote(me);await loadSchedulesRemote();}
-  render();
- }catch(err){console.error(err);alert('在席への復帰に失敗しました。通信状態を確認してください。');}
+  pushHistory('manual',me,{before:before.status,after:'在席',destination:loc});save();render();showToast(`在席・${loc}に戻しました。`,'success');
+ }catch(err){
+  console.error(err);Object.assign(me,before);render();showToast('在席への復帰に失敗しました。','error');
+ }
  finally{if(btn)btn.disabled=false;}
 }
 function jstDateKey(value){
@@ -396,10 +413,10 @@ function renderSchedules(board){
  board.className='schedule-list';const rows=[...data.schedules].sort((a,b)=>a.startAt.localeCompare(b.startAt));board.innerHTML='<button id="newScheduleInline" class="primary">＋ 予定を登録</button>'+(rows.length?rows.map(s=>{const e=data.employees.find(x=>x.id===s.employeeId);return `<article class="list-item card"><div class="list-row"><strong>${esc(e?.name||'不明')}：${esc(s.status)}</strong><span class="list-muted">${s.startDone?(s.endDone?'完了':'実行中'):'予定'}</span></div><div class="schedule-details"><div><b>時間</b><br>${esc(timeRange(s))}</div><div><b>行先</b><br>${esc(s.destination||'―')}</div><div><b>用件</b><br>${esc(s.purpose||'―')}</div></div><div class="schedule-actions"><button class="small-btn secondary edit-schedule" data-id="${s.id}">編集</button><button class="small-btn danger delete-schedule" data-id="${s.id}">削除</button></div></article>`}).join(''):'<div class="empty card">自動切換え予定はありません</div>');
  $('#summary').textContent=`予定 ${rows.length}件`;setTimeout(()=>{$('#newScheduleInline')?.addEventListener('click',()=>openSchedule());document.querySelectorAll('.edit-schedule').forEach(b=>b.addEventListener('click',()=>openSchedule(b.dataset.id)));document.querySelectorAll('.delete-schedule').forEach(b=>b.addEventListener('click',()=>deleteSchedule(b.dataset.id)));},0);
 }
-function applyEditRules(){const st=$('#editStatus').value,sm=statusByName(st);if(sm.defaultDestination&&!$('#editDestination').value.trim())$('#editDestination').value=sm.defaultDestination;if(sm.useDestination===false){$('#editDestination').value='';$('#editPurpose').value=''}if(!sm.useReturn)$('#editReturn').value='';if($('#editGoHome').checked)$('#editReturn').value=''}
+function applyEditRules(){const st=$('#editStatus').value,sm=statusByName(st),e=data.employees.find(x=>x.id===$('#editEmployeeId').value);if(st==='在席'&&e){$('#editDestination').value=defaultLocationForEmployee(e);}else if(sm.defaultDestination&&!$('#editDestination').value.trim())$('#editDestination').value=sm.defaultDestination;if(sm.useDestination===false){$('#editDestination').value='';$('#editPurpose').value=''}if(!sm.useReturn)$('#editReturn').value='';if($('#editGoHome').checked)$('#editReturn').value=''}
 function openEdit(id){const e=data.employees.find(x=>x.id===id);$('#editEmployeeId').value=id;$('#editTitle').textContent=e.name;fillStatusSelect($('#editStatus'),e.status,true);$('#editDestination').value=e.destination;$('#editPurpose').value=e.purpose;$('#editReturn').value=e.returnTime;$('#editPhone').value=e.phone;$('#editDirect').checked=e.direct;$('#editGoHome').checked=e.goHome;$('#editMemo').value=e.memo||'';$('#editDialog').showModal()}
 $('#editStatus').addEventListener('change',applyEditRules);$('#editGoHome').addEventListener('change',applyEditRules);
-$('#saveEditBtn').addEventListener('click',async ev=>{ev.preventDefault();applyEditRules();const id=$('#editEmployeeId').value,e=data.employees.find(x=>x.id===id),before=e.status;Object.assign(e,{status:$('#editStatus').value,destination:$('#editDestination').value.trim(),purpose:$('#editPurpose').value.trim(),returnTime:$('#editReturn').value,phone:$('#editPhone').value,direct:$('#editDirect').checked,goHome:$('#editGoHome').checked,memo:$('#editMemo').value.trim()});pushHistory('manual',e,{before,after:e.status,destination:e.destination});save();try{await saveEmployeeStatusRemote(e);$('#editDialog').close();render();}catch(err){console.error(err);alert('Supabaseへの保存に失敗しました。通信状態を確認してください。');}});
+$('#saveEditBtn').addEventListener('click',async ev=>{ev.preventDefault();applyEditRules();const id=$('#editEmployeeId').value,e=data.employees.find(x=>x.id===id),before=e.status,status=$('#editStatus').value;const destination=status==='在席'?defaultLocationForEmployee(e):$('#editDestination').value.trim();Object.assign(e,{status,destination,purpose:$('#editPurpose').value.trim(),returnTime:$('#editReturn').value,phone:$('#editPhone').value,direct:$('#editDirect').checked,goHome:$('#editGoHome').checked,memo:$('#editMemo').value.trim()});pushHistory('manual',e,{before,after:e.status,destination:e.destination});save();try{await saveEmployeeStatusRemote(e);$('#editDialog').close();render();}catch(err){console.error(err);showToast('Supabaseへの保存に失敗しました。','error');}});
 function applyScheduleStatusRules(){
  const st=$('#scheduleStatus').value,isFull=st==='全休';
  if(isHolidayStatus(st)){
