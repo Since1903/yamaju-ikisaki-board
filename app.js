@@ -1,4 +1,4 @@
-// Ver.5.1.2 pointer-based board layout editor / multi-day full-day leave / holiday board / overlap priority / multi-device sync
+// Ver.5.1.3 stable pointer board layout editor / multi-day full-day leave / holiday board / overlap priority / multi-device sync
 let supabaseClient=null;
 let authSession=null;
 let currentEmployeeProfile=null;
@@ -684,44 +684,48 @@ function decorateBoardForLayoutEdit(board){
 function startLayoutPointerDrag(ev,card,board){
  if(ev.button!==undefined&&ev.button!==0)return;
  ev.preventDefault();ev.stopPropagation();
+ const grip=ev.currentTarget;
  layoutDraggingCard=card;layoutDragPointerId=ev.pointerId;layoutDragStartX=ev.clientX;layoutDragStartY=ev.clientY;layoutDragMoved=false;
+ let dropTarget=null,dropAfter=false;
  card.classList.add('layout-card-dragging');
- card.style.pointerEvents='none';
  document.body.classList.add('layout-pointer-dragging');
- try{ev.currentTarget.setPointerCapture(ev.pointerId);}catch(_){ }
+ try{grip.setPointerCapture(ev.pointerId);}catch(_){ }
+ const clearMarkers=()=>board.querySelectorAll('.employee-card').forEach(c=>c.classList.remove('layout-drop-before','layout-drop-after'));
  const move=e=>{
   if(layoutDragPointerId!==null&&e.pointerId!==layoutDragPointerId)return;
   e.preventDefault();
   if(Math.hypot(e.clientX-layoutDragStartX,e.clientY-layoutDragStartY)>4)layoutDragMoved=true;
+  if(!layoutDragMoved)return;
   const cards=[...board.querySelectorAll('.employee-card[data-employee-id]')].filter(c=>c!==card);
   if(!cards.length)return;
   let target=null,best=Infinity;
   for(const c of cards){
-   const r=c.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;
-   const d=(e.clientX-cx)*(e.clientX-cx)+(e.clientY-cy)*(e.clientY-cy);
+   const r=c.getBoundingClientRect();
+   const dx=e.clientX-(r.left+r.width/2),dy=e.clientY-(r.top+r.height/2);
+   const d=dx*dx+dy*dy;
    if(d<best){best=d;target=c;}
   }
   if(!target)return;
   const tr=target.getBoundingClientRect();
-  const rowTolerance=Math.max(24,tr.height*.35);
-  let after;
-  if(Math.abs(e.clientY-(tr.top+tr.height/2))<=rowTolerance){after=e.clientX>tr.left+tr.width/2;}
-  else{after=e.clientY>tr.top+tr.height/2;}
-  const markerClass=after?'layout-drop-after':'layout-drop-before';
-  cards.forEach(c=>c.classList.remove('layout-drop-before','layout-drop-after'));
-  target.classList.add(markerClass);
-  const ref=after?target.nextSibling:target;
-  if(ref!==card&&card.nextSibling!==ref)board.insertBefore(card,ref);
+  const sameRow=Math.abs(e.clientY-(tr.top+tr.height/2))<=Math.max(28,tr.height*.42);
+  const after=sameRow ? e.clientX>(tr.left+tr.width/2) : e.clientY>(tr.top+tr.height/2);
+  clearMarkers();
+  target.classList.add(after?'layout-drop-after':'layout-drop-before');
+  dropTarget=target;dropAfter=after;
  };
  const finish=e=>{
   if(layoutDragPointerId!==null&&e.pointerId!==layoutDragPointerId)return;
   document.removeEventListener('pointermove',move,true);document.removeEventListener('pointerup',finish,true);document.removeEventListener('pointercancel',finish,true);
-  board.querySelectorAll('.employee-card').forEach(c=>c.classList.remove('layout-drop-before','layout-drop-after'));
-  card.classList.remove('layout-card-dragging');card.style.pointerEvents='';
-  document.body.classList.remove('layout-pointer-dragging');
+  try{if(grip.hasPointerCapture?.(layoutDragPointerId))grip.releasePointerCapture(layoutDragPointerId);}catch(_){ }
+  clearMarkers();
+  card.classList.remove('layout-card-dragging');document.body.classList.remove('layout-pointer-dragging');
+  if(layoutDragMoved&&dropTarget){
+   const ref=dropAfter?dropTarget.nextElementSibling:dropTarget;
+   if(ref)board.insertBefore(card,ref);else board.appendChild(card);
+   syncOrderFromBoard();
+   showToast('並び順を変更しました。保存で確定します。');
+  }
   layoutDraggingCard=null;layoutDragPointerId=null;
-  syncOrderFromBoard();
-  if(layoutDragMoved)showToast('並び順を変更しました。保存で確定します。');
  };
  document.addEventListener('pointermove',move,true);document.addEventListener('pointerup',finish,true);document.addEventListener('pointercancel',finish,true);
 }
