@@ -76,7 +76,7 @@
         <div><small>電話</small><strong class="phone-status"></strong></div>
       </div>
       <div class="tag-row"></div>
-      <button class="change-btn primary">変更</button>
+      <div class="card-action-row"><button class="eraser-btn secondary" type="button" hidden>⌫ 在席に戻す</button><button class="change-btn primary">変更</button></div>
     </article>
   </template>
 
@@ -98,7 +98,7 @@
     <form id="scheduleForm" method="dialog" class="dialog-form">
       <div class="dialog-title"><div><div class="eyebrow">SERVER AUTO SWITCH V4.6</div><h2 id="scheduleDialogTitle">予定を登録</h2></div><button type="button" value="cancel" class="icon-btn" aria-label="閉じる">×</button></div>
       <input id="scheduleId" type="hidden" />
-      <div class="notice">Ver.4.6では「全休」を複数日で登録できます。全休は開始日～終了日を指定し、休み掲示板では期間と日数を表示します。午前休・午後休・時間休は従来どおり1日単位です。</div>
+      <div class="notice">Ver.4.7では「全休」を複数日で登録できます。全休は開始日～終了日を指定し、休み掲示板では期間と日数を表示します。午前休・午後休・時間休は従来どおり1日単位です。</div>
       <label>社員<select id="scheduleEmployee"></select></label>
       <div class="two-col"><label>開始日<input id="scheduleDate" type="date" /></label><label>終了日（全休のみ）<input id="scheduleEndDate" type="date" /></label></div>
       <div id="scheduleTimeFields" class="two-col"><label>開始<input id="scheduleStart" type="time" /></label><label>終了<input id="scheduleEnd" type="time" /></label></div>

@@ -46,7 +46,7 @@ function toEmployeeModel(emp,statusRow){
 async function loadMasterData(){
  if(!supabaseClient||!authSession)return;
  const [{data:deps,error:depErr},{data:jobs,error:jobErr}]=await Promise.all([
-  supabaseClient.from('departments').select('id,name,sort_order,active').order('sort_order').order('id'),
+  supabaseClient.from('departments').select('id,name,sort_order,active,default_location').order('sort_order').order('id'),
   supabaseClient.from('job_types').select('id,name,sort_order,active').order('sort_order').order('id')
  ]);
  if(depErr)throw depErr;if(jobErr)throw jobErr;
@@ -308,6 +308,33 @@ function renderFilters(){
  $('#scheduleEmployee').innerHTML=data.employees.map(e=>`<option value="${e.id}">${esc(e.name)}（${esc(e.department)} / ${esc(e.occupation)}）</option>`).join('');
 }
 function orderedVisibleEmployees(){const ids=new Set(data.settings.visibleEmployeeIds||data.employees.map(e=>e.id));let list=data.employees.filter(e=>ids.has(e.id));const me=data.settings.currentUserId;list.sort((a,b)=>a.id===me?-1:b.id===me?1:0);return list}
+function defaultLocationForEmployee(e){
+ const row=departmentMasterRows.find(d=>d.name===e?.department);
+ const loc=String(row?.default_location||'').replace(/^'+|'+$/g,'').trim();
+ return loc||'本社';
+}
+async function eraseMyStatus(){
+ const me=data.employees.find(e=>e.id===data.settings.currentUserId);
+ if(!me)return alert('自分の社員情報が見つかりません。');
+ if(!confirm('現在の状態を消して「在席」に戻しますか？\n実行中の予定がある場合は、その予定も終了扱いにします。'))return;
+ const btn=document.querySelector('.eraser-btn');if(btn)btn.disabled=true;
+ try{
+  const nowIso=new Date().toISOString();
+  if(remoteMode){
+   const {data:running,error:findErr}=await supabaseClient.from('schedules').select('id').eq('employee_id',Number(me.dbId||me.id)).eq('start_done',true).eq('end_done',false).lte('start_at',nowIso).gt('end_at',nowIso);
+   if(findErr)throw findErr;
+   if(running?.length){const ids=running.map(x=>x.id);const {error:endErr}=await supabaseClient.from('schedules').update({end_done:true,updated_at:nowIso}).in('id',ids);if(endErr)throw endErr;}
+  }else{
+   const now=Date.now();data.schedules.forEach(s=>{if(s.employeeId===me.id&&s.startDone&&!s.endDone&&new Date(s.startAt).getTime()<=now&&new Date(s.endAt).getTime()>now)s.endDone=true;});
+  }
+  const before=me.status,loc=defaultLocationForEmployee(me);
+  Object.assign(me,{status:'在席',destination:loc,purpose:'',returnTime:'',phone:'ok',direct:false,goHome:false,memo:''});
+  pushHistory('manual',me,{before,after:'在席',destination:loc});save();
+  if(remoteMode){await saveEmployeeStatusRemote(me);await loadSchedulesRemote();}
+  render();
+ }catch(err){console.error(err);alert('在席への復帰に失敗しました。通信状態を確認してください。');}
+ finally{if(btn)btn.disabled=false;}
+}
 function jstDateKey(value){
  const d=value instanceof Date?value:new Date(value);if(Number.isNaN(d.getTime()))return '';
  const parts=new Intl.DateTimeFormat('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(d);
@@ -352,7 +379,7 @@ function renderBoard(board){
  const q=$('#searchInput').value.trim().toLowerCase(),dep=$('#departmentFilter').value,occ=$('#occupationFilter').value,st=$('#statusFilter').value;const base=orderedVisibleEmployees();
  const list=base.filter(e=>(!q||`${e.name} ${e.destination} ${e.purpose}`.toLowerCase().includes(q))&&(!dep||e.department===dep)&&(!occ||e.occupation===occ)&&(!st||e.status===st));
  board.className='board';board.innerHTML='';const t=$('#employeeCardTemplate');
- list.forEach(e=>{const n=t.content.cloneNode(true),card=n.querySelector('.employee-card'),sm=statusByName(e.status),bg=sm.color||'#fff',fg=contrast(bg);card.style.setProperty('--status-bg',bg);card.style.setProperty('--card-text',fg);n.querySelector('.employee-name').textContent=e.name;n.querySelector('.employee-meta').textContent=[e.department,e.occupation].filter(Boolean).join(' / ');n.querySelector('.status-pill').textContent=e.status;n.querySelector('.destination').textContent=sm.useDestination===false?'―':(e.destination||'―');n.querySelector('.purpose').textContent=e.purpose||' ';const shownReturn=(!sm.useReturn||e.goHome||!e.returnTime||e.returnTime==='00:00')?'―':e.returnTime;n.querySelector('.return-time').textContent=shownReturn;n.querySelector('.phone-status').textContent=phoneText(e.phone);const tags=n.querySelector('.tag-row');if(e.id===data.settings.currentUserId)tags.innerHTML+='<span class="tag">自分</span>';if(e.direct)tags.innerHTML+='<span class="tag">直行</span>';if(e.goHome)tags.innerHTML+='<span class="tag">直帰</span>';if(!sm.active)tags.innerHTML+='<span class="tag">停止中状態</span>';if(e.memo)tags.innerHTML+=`<span class="tag">${esc(e.memo)}</span>`;n.querySelector('.change-btn').addEventListener('click',()=>openEdit(e.id));board.appendChild(n)});
+ list.forEach(e=>{const n=t.content.cloneNode(true),card=n.querySelector('.employee-card'),sm=statusByName(e.status),bg=sm.color||'#fff',fg=contrast(bg);card.style.setProperty('--status-bg',bg);card.style.setProperty('--card-text',fg);n.querySelector('.employee-name').textContent=e.name;n.querySelector('.employee-meta').textContent=[e.department,e.occupation].filter(Boolean).join(' / ');n.querySelector('.status-pill').textContent=e.status;n.querySelector('.destination').textContent=sm.useDestination===false?'―':(e.destination||'―');n.querySelector('.purpose').textContent=e.purpose||' ';const shownReturn=(!sm.useReturn||e.goHome||!e.returnTime||e.returnTime==='00:00')?'―':e.returnTime;n.querySelector('.return-time').textContent=shownReturn;n.querySelector('.phone-status').textContent=phoneText(e.phone);const tags=n.querySelector('.tag-row');if(e.id===data.settings.currentUserId)tags.innerHTML+='<span class="tag">自分</span>';if(e.direct)tags.innerHTML+='<span class="tag">直行</span>';if(e.goHome)tags.innerHTML+='<span class="tag">直帰</span>';if(!sm.active)tags.innerHTML+='<span class="tag">停止中状態</span>';if(e.memo)tags.innerHTML+=`<span class="tag">${esc(e.memo)}</span>`;n.querySelector('.change-btn').addEventListener('click',()=>openEdit(e.id));const eraser=n.querySelector('.eraser-btn');if(e.id===data.settings.currentUserId){eraser.hidden=false;eraser.addEventListener('click',eraseMyStatus);}else eraser.remove();board.appendChild(n)});
  $('#summary').textContent=`表示 ${list.length}名 / 登録${data.employees.length}名`;if(!list.length)board.innerHTML='<div class="empty card">該当する社員がいません</div>';
 }
 function renderHolidayBoard(board){
