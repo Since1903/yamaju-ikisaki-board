@@ -1,4 +1,4 @@
-// Ver.5.1 sidebar board layout editor / multi-day full-day leave / holiday board / overlap priority / multi-device sync
+// Ver.5.1.1 pointer/touch layout reorder fix / sidebar board layout editor / multi-day full-day leave / holiday board / overlap priority / multi-device sync
 let supabaseClient=null;
 let authSession=null;
 let currentEmployeeProfile=null;
@@ -643,6 +643,7 @@ $('#addDepartmentBtn')?.addEventListener('click',()=>openMasterEdit('department'
 let layoutEditMode=false;
 let layoutEditSnapshot=null;
 let layoutDraggingCard=null;
+let layoutPointerDrag=null;
 function profileOrderedEmployees(){
  const map=new Map(data.employees.map(e=>[String(e.id),e]));
  const order=(data.settings.employeeOrder||[]).map(String).filter(id=>map.has(id));
@@ -666,15 +667,70 @@ function toggleLayoutEmployee(id){
 function decorateBoardForLayoutEdit(board){
  board.classList.add('layout-editing-board');
  board.querySelectorAll('.employee-card').forEach(card=>{
-  card.draggable=true;
+  card.draggable=false;
   const id=String(card.dataset.employeeId||'');
-  const top=document.createElement('div');top.className='layout-card-editor';top.innerHTML='<span class="layout-card-grip">☷</span><button type="button" class="layout-card-remove" title="表示から外す">×</button>';
+  const top=document.createElement('div');
+  top.className='layout-card-editor';
+  top.innerHTML='<button type="button" class="layout-card-grip" aria-label="ドラッグして並び替え" title="ドラッグして並び替え">☷</button><button type="button" class="layout-card-remove" title="表示から外す">×</button>';
   card.prepend(top);
   top.querySelector('.layout-card-remove').addEventListener('click',ev=>{ev.stopPropagation();toggleLayoutEmployee(id)});
-  card.addEventListener('dragstart',ev=>{layoutDraggingCard=card;card.classList.add('layout-card-dragging');ev.dataTransfer.effectAllowed='move';ev.dataTransfer.setData('text/plain',id);});
-  card.addEventListener('dragend',()=>{card.classList.remove('layout-card-dragging');layoutDraggingCard=null;syncOrderFromBoard();});
-  card.addEventListener('dragover',ev=>{ev.preventDefault();if(!layoutDraggingCard||layoutDraggingCard===card)return;const rect=card.getBoundingClientRect();const after=(ev.clientY>rect.top+rect.height/2)||(Math.abs(ev.clientY-(rect.top+rect.height/2))<rect.height*.35&&ev.clientX>rect.left+rect.width/2);board.insertBefore(layoutDraggingCard,after?card.nextSibling:card);});
+
+  const grip=top.querySelector('.layout-card-grip');
+  grip.addEventListener('pointerdown',ev=>{
+   if(ev.button!==undefined&&ev.button!==0)return;
+   ev.preventDefault();ev.stopPropagation();
+   beginLayoutPointerDrag(ev,card,board,grip);
+  });
  });
+}
+function beginLayoutPointerDrag(ev,card,board,grip){
+ if(layoutPointerDrag)endLayoutPointerDrag();
+ layoutDraggingCard=card;
+ layoutPointerDrag={pointerId:ev.pointerId,card,board,grip};
+ card.classList.add('layout-card-dragging');
+ board.classList.add('layout-drag-active');
+ document.body.classList.add('layout-dragging');
+ try{grip.setPointerCapture?.(ev.pointerId)}catch(_){ }
+ document.addEventListener('pointermove',onLayoutPointerMove,{passive:false});
+ document.addEventListener('pointerup',onLayoutPointerEnd,{passive:false});
+ document.addEventListener('pointercancel',onLayoutPointerEnd,{passive:false});
+}
+function onLayoutPointerMove(ev){
+ const d=layoutPointerDrag;if(!d||ev.pointerId!==d.pointerId)return;
+ ev.preventDefault();
+ const {card,board}=d;
+ card.style.pointerEvents='none';
+ const under=document.elementFromPoint(ev.clientX,ev.clientY);
+ card.style.pointerEvents='';
+ const target=under?.closest?.('#board .employee-card[data-employee-id]');
+ board.querySelectorAll('.layout-drop-target').forEach(x=>x.classList.remove('layout-drop-target'));
+ if(!target||target===card||!board.contains(target))return;
+ target.classList.add('layout-drop-target');
+ const rect=target.getBoundingClientRect();
+ const cx=rect.left+rect.width/2,cy=rect.top+rect.height/2;
+ const dx=ev.clientX-cx,dy=ev.clientY-cy;
+ // グリッド上では、縦方向を優先しつつ同じ行では左右位置で前後を決める。
+ const sameRow=Math.abs(dy)<rect.height*.42;
+ const after=sameRow ? dx>0 : dy>0;
+ const ref=after?target.nextElementSibling:target;
+ if(ref!==card&&!(after&&target.nextElementSibling===card))board.insertBefore(card,ref);
+}
+function onLayoutPointerEnd(ev){
+ const d=layoutPointerDrag;if(!d||ev.pointerId!==d.pointerId)return;
+ ev.preventDefault();endLayoutPointerDrag();
+}
+function endLayoutPointerDrag(){
+ const d=layoutPointerDrag;if(!d)return;
+ try{d.grip.releasePointerCapture?.(d.pointerId)}catch(_){ }
+ d.card.classList.remove('layout-card-dragging');
+ d.board.classList.remove('layout-drag-active');
+ d.board.querySelectorAll('.layout-drop-target').forEach(x=>x.classList.remove('layout-drop-target'));
+ document.body.classList.remove('layout-dragging');
+ document.removeEventListener('pointermove',onLayoutPointerMove);
+ document.removeEventListener('pointerup',onLayoutPointerEnd);
+ document.removeEventListener('pointercancel',onLayoutPointerEnd);
+ layoutDraggingCard=null;layoutPointerDrag=null;
+ syncOrderFromBoard();
 }
 function syncOrderFromBoard(){
  const visibleOrder=[...document.querySelectorAll('#board .employee-card[data-employee-id]')].map(c=>String(c.dataset.employeeId));

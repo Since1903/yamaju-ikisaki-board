@@ -69,3 +69,12 @@ body.layout-editor-open .shell,body.layout-editor-open .app-header,body.layout-e
 .layout-editing-board .employee-card{position:relative;cursor:grab;outline:1px dashed rgba(58,157,116,.3);user-select:none}.layout-editing-board .employee-card:active{cursor:grabbing}.layout-editing-board .employee-card.layout-card-dragging{opacity:.48;transform:scale(.985)}.layout-card-editor{display:flex;align-items:center;justify-content:space-between;height:34px;margin:-1px -1px 9px;padding:0 7px 0 12px;background:#23493d;color:#fff;border-radius:var(--radius) var(--radius) 0 0}.layout-card-grip{font-weight:900;font-size:18px;letter-spacing:-2px}.layout-card-remove{width:28px;height:28px;border:0;border-radius:7px;background:rgba(255,255,255,.14);color:#fff;font-size:20px;cursor:pointer}.layout-card-remove:hover{background:rgba(255,255,255,.25)}.layout-editing-board .change-btn,.layout-editing-board .eraser-btn{pointer-events:none;opacity:.42}
 @media(max-width:900px){body.layout-editor-open .shell,body.layout-editor-open .app-header{margin-left:0}body.layout-editor-open .bottom-nav{left:0}.layout-editor{width:min(360px,92vw)}}
 @media(max-width:520px){.layout-editor{width:100vw;max-width:none}.layout-editor-actions{grid-template-columns:1fr 1fr}.layout-card-editor{height:38px}}
+
+/* Ver.5.1.1 ドラッグ並び替え修正（マウス・タッチ両対応） */
+.layout-card-grip{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:28px;padding:0 8px;border:0;border-radius:7px;background:transparent;color:#fff;font:inherit;font-weight:900;font-size:18px;letter-spacing:-2px;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
+.layout-card-grip:hover{background:rgba(255,255,255,.14)}
+.layout-card-grip:active{cursor:grabbing;background:rgba(255,255,255,.22)}
+body.layout-dragging{user-select:none;-webkit-user-select:none;cursor:grabbing}
+.layout-editing-board.layout-drag-active .employee-card{transition:transform .08s ease,box-shadow .08s ease}
+.layout-editing-board .employee-card.layout-card-dragging{opacity:.38;box-shadow:0 18px 38px rgba(20,50,40,.22);transform:scale(.985)}
+.layout-editing-board .employee-card.layout-drop-target{outline:3px solid rgba(58,157,116,.68);outline-offset:2px}
