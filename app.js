@@ -1,4 +1,4 @@
-// Ver.5.0 free board layout / multi-day full-day leave / holiday board / overlap priority / multi-device sync
+// Ver.5.1 sidebar board layout editor / multi-day full-day leave / holiday board / overlap priority / multi-device sync
 let supabaseClient=null;
 let authSession=null;
 let currentEmployeeProfile=null;
@@ -322,7 +322,7 @@ function orderedVisibleEmployees(){
  const order=(data.settings.employeeOrder||[]).map(String).filter(id=>map.has(id));
  data.employees.forEach(e=>{if(!order.includes(String(e.id)))order.push(String(e.id));});
  let list=order.filter(id=>ids.has(id)).map(id=>map.get(id));
- if(data.settings.pinSelfFirst){const me=String(data.settings.currentUserId||'');list.sort((a,b)=>a.id===me?-1:b.id===me?1:0);}
+ if(data.settings.pinSelfFirst&&!layoutEditMode){const me=String(data.settings.currentUserId||'');list.sort((a,b)=>a.id===me?-1:b.id===me?1:0);}
  return list;
 }
 function defaultLocationForEmployee(e){
@@ -416,7 +416,7 @@ function renderBoard(board){
  const cols=String(data.settings.boardColumns||'auto');
  if(cols!=='auto'){board.classList.add('fixed-columns');board.style.setProperty('--board-cols',cols);}else{board.classList.remove('fixed-columns');board.style.removeProperty('--board-cols');}
  board.innerHTML='';const t=$('#employeeCardTemplate');
- list.forEach(e=>{const n=t.content.cloneNode(true),card=n.querySelector('.employee-card'),sm=statusByName(e.status),bg=sm.color||'#fff',fg=contrast(bg);card.style.setProperty('--status-bg',bg);card.style.setProperty('--card-text',fg);n.querySelector('.employee-name').textContent=e.name;n.querySelector('.employee-meta').textContent=[e.department,e.occupation].filter(Boolean).join(' / ');n.querySelector('.status-pill').textContent=e.status;n.querySelector('.destination').textContent=sm.useDestination===false?'―':(e.destination||'―');n.querySelector('.purpose').textContent=e.purpose||' ';const shownReturn=(!sm.useReturn||e.goHome||!e.returnTime||e.returnTime==='00:00')?'―':e.returnTime;n.querySelector('.return-time').textContent=shownReturn;n.querySelector('.phone-status').textContent=phoneText(e.phone);const tags=n.querySelector('.tag-row');if(e.id===data.settings.currentUserId)tags.innerHTML+='<span class="tag">自分</span>';if(e.direct)tags.innerHTML+='<span class="tag">直行</span>';if(e.goHome)tags.innerHTML+='<span class="tag">直帰</span>';if(!sm.active)tags.innerHTML+='<span class="tag">停止中状態</span>';if(e.memo)tags.innerHTML+=`<span class="tag">${esc(e.memo)}</span>`;n.querySelector('.change-btn').addEventListener('click',()=>openEdit(e.id));const eraser=n.querySelector('.eraser-btn');if(e.id===data.settings.currentUserId){eraser.hidden=false;eraser.addEventListener('click',eraseMyStatus);}else eraser.remove();board.appendChild(n)});
+ list.forEach(e=>{const n=t.content.cloneNode(true),card=n.querySelector('.employee-card'),sm=statusByName(e.status),bg=sm.color||'#fff',fg=contrast(bg);card.dataset.employeeId=String(e.id);card.style.setProperty('--status-bg',bg);card.style.setProperty('--card-text',fg);n.querySelector('.employee-name').textContent=e.name;n.querySelector('.employee-meta').textContent=[e.department,e.occupation].filter(Boolean).join(' / ');n.querySelector('.status-pill').textContent=e.status;n.querySelector('.destination').textContent=sm.useDestination===false?'―':(e.destination||'―');n.querySelector('.purpose').textContent=e.purpose||' ';const shownReturn=(!sm.useReturn||e.goHome||!e.returnTime||e.returnTime==='00:00')?'―':e.returnTime;n.querySelector('.return-time').textContent=shownReturn;n.querySelector('.phone-status').textContent=phoneText(e.phone);const tags=n.querySelector('.tag-row');if(e.id===data.settings.currentUserId)tags.innerHTML+='<span class="tag">自分</span>';if(e.direct)tags.innerHTML+='<span class="tag">直行</span>';if(e.goHome)tags.innerHTML+='<span class="tag">直帰</span>';if(!sm.active)tags.innerHTML+='<span class="tag">停止中状態</span>';if(e.memo)tags.innerHTML+=`<span class="tag">${esc(e.memo)}</span>`;n.querySelector('.change-btn').addEventListener('click',()=>openEdit(e.id));const eraser=n.querySelector('.eraser-btn');if(e.id===data.settings.currentUserId){eraser.hidden=false;eraser.addEventListener('click',eraseMyStatus);}else eraser.remove();board.appendChild(n)});if(layoutEditMode)decorateBoardForLayoutEdit(board);
  $('#summary').textContent=`表示 ${list.length}名 / 登録${data.employees.length}名`;if(!list.length)board.innerHTML='<div class="empty card">該当する社員がいません</div>';
 }
 function renderHolidayBoard(board){
@@ -640,45 +640,73 @@ async function deleteMaster(type,id){const c=masterConfig(type),row=c.rows.find(
 async function moveMaster(type,id,delta){const c=masterConfig(type),rows=[...c.rows].sort((a,b)=>(a.sort_order||0)-(b.sort_order||0)||a.id-b.id),i=rows.findIndex(r=>Number(r.id)===Number(id)),j=i+delta;if(i<0||j<0||j>=rows.length)return;const a=rows[i],b=rows[j],ao=a.sort_order||i+1,bo=b.sort_order||j+1;try{const {error:e1}=await supabaseClient.from(c.table).update({sort_order:bo}).eq('id',a.id);if(e1)throw e1;const {error:e2}=await supabaseClient.from(c.table).update({sort_order:ao}).eq('id',b.id);if(e2)throw e2;await refreshMasters();}catch(err){console.error(err);alert(err.message||'並び替えに失敗しました。')}}
 $('#addDepartmentBtn')?.addEventListener('click',()=>openMasterEdit('department'));$('#addJobTypeBtn')?.addEventListener('click',()=>openMasterEdit('job'));
 
+let layoutEditMode=false;
+let layoutEditSnapshot=null;
+let layoutDraggingCard=null;
 function profileOrderedEmployees(){
  const map=new Map(data.employees.map(e=>[String(e.id),e]));
  const order=(data.settings.employeeOrder||[]).map(String).filter(id=>map.has(id));
- data.employees.forEach(e=>{if(!order.includes(e.id))order.push(e.id);});
+ data.employees.forEach(e=>{if(!order.includes(String(e.id)))order.push(String(e.id));});
  return order.map(id=>map.get(id));
 }
-function profileEmployeeRow(e,visible){return `<div class="layout-employee-row" draggable="true" data-id="${esc(e.id)}"><button type="button" class="layout-drag-handle" title="ドラッグして移動" aria-label="${esc(e.name)}を並び替え">⋮⋮</button><label class="layout-visible-check"><input type="checkbox" ${visible?'checked':''}> <span><strong>${esc(e.name)}</strong><small>${esc(e.department)}${e.occupation?` / ${esc(e.occupation)}`:''}</small></span></label><div class="layout-move-buttons"><button type="button" class="small-btn secondary layout-up" title="上へ">↑</button><button type="button" class="small-btn secondary layout-down" title="下へ">↓</button></div></div>`;}
-function moveProfileLayoutRow(row,delta){if(!row)return;const parent=row.parentElement;if(delta<0&&row.previousElementSibling)parent.insertBefore(row,row.previousElementSibling);if(delta>0&&row.nextElementSibling)parent.insertBefore(row.nextElementSibling,row);}
-function setupProfileLayoutInteractions(){
- const list=$('#employeeLayoutList');if(!list)return;let dragging=null;
- list.querySelectorAll('.layout-employee-row').forEach(row=>{
-  row.addEventListener('dragstart',ev=>{dragging=row;row.classList.add('dragging');ev.dataTransfer.effectAllowed='move';ev.dataTransfer.setData('text/plain',row.dataset.id);});
-  row.addEventListener('dragend',()=>{row.classList.remove('dragging');dragging=null;});
-  row.addEventListener('dragover',ev=>{ev.preventDefault();if(!dragging||dragging===row)return;const rect=row.getBoundingClientRect();const after=ev.clientY>rect.top+rect.height/2;list.insertBefore(dragging,after?row.nextSibling:row);});
-  row.querySelector('.layout-up')?.addEventListener('click',()=>moveProfileLayoutRow(row,-1));
-  row.querySelector('.layout-down')?.addEventListener('click',()=>moveProfileLayoutRow(row,1));
+function layoutVisibleSet(){return new Set((data.settings.visibleEmployeeIds||[]).map(String));}
+function renderLayoutMemberList(){
+ const list=$('#layoutMemberList');if(!list)return;
+ const q=($('#layoutMemberSearch')?.value||'').trim().toLowerCase(),dep=$('#layoutDepartmentFilter')?.value||'',vis=layoutVisibleSet();
+ const rows=profileOrderedEmployees().filter(e=>(!q||`${e.name} ${e.department} ${e.occupation}`.toLowerCase().includes(q))&&(!dep||e.department===dep));
+ list.innerHTML=rows.map(e=>`<button type="button" class="layout-member-item ${vis.has(String(e.id))?'selected':''}" data-id="${esc(e.id)}"><span><strong>${esc(e.name)}</strong><small>${esc(e.department)}${e.occupation?` / ${esc(e.occupation)}`:''}</small></span><b>${vis.has(String(e.id))?'表示中':'追加'}</b></button>`).join('')||'<div class="layout-member-empty">該当する社員がいません。</div>';
+ list.querySelectorAll('.layout-member-item').forEach(btn=>btn.addEventListener('click',()=>toggleLayoutEmployee(String(btn.dataset.id))));
+}
+function toggleLayoutEmployee(id){
+ const ids=(data.settings.visibleEmployeeIds||[]).map(String),i=ids.indexOf(id);
+ if(i>=0)ids.splice(i,1);else ids.push(id);
+ data.settings.visibleEmployeeIds=ids;
+ render();renderLayoutMemberList();
+}
+function decorateBoardForLayoutEdit(board){
+ board.classList.add('layout-editing-board');
+ board.querySelectorAll('.employee-card').forEach(card=>{
+  card.draggable=true;
+  const id=String(card.dataset.employeeId||'');
+  const top=document.createElement('div');top.className='layout-card-editor';top.innerHTML='<span class="layout-card-grip">☷</span><button type="button" class="layout-card-remove" title="表示から外す">×</button>';
+  card.prepend(top);
+  top.querySelector('.layout-card-remove').addEventListener('click',ev=>{ev.stopPropagation();toggleLayoutEmployee(id)});
+  card.addEventListener('dragstart',ev=>{layoutDraggingCard=card;card.classList.add('layout-card-dragging');ev.dataTransfer.effectAllowed='move';ev.dataTransfer.setData('text/plain',id);});
+  card.addEventListener('dragend',()=>{card.classList.remove('layout-card-dragging');layoutDraggingCard=null;syncOrderFromBoard();});
+  card.addEventListener('dragover',ev=>{ev.preventDefault();if(!layoutDraggingCard||layoutDraggingCard===card)return;const rect=card.getBoundingClientRect();const after=(ev.clientY>rect.top+rect.height/2)||(Math.abs(ev.clientY-(rect.top+rect.height/2))<rect.height*.35&&ev.clientX>rect.left+rect.width/2);board.insertBefore(layoutDraggingCard,after?card.nextSibling:card);});
  });
- $('#showAllEmployeesBtn')?.addEventListener('click',()=>list.querySelectorAll('input[type=checkbox]').forEach(x=>x.checked=true));
- $('#hideAllEmployeesBtn')?.addEventListener('click',()=>list.querySelectorAll('input[type=checkbox]').forEach(x=>x.checked=false));
 }
-function openProfile(){
- $('#currentUserSelect').innerHTML=data.employees.map(e=>`<option value="${e.id}">${esc(e.name)}（${esc(e.department)}）</option>`).join('');
- $('#currentUserSelect').value=data.settings.currentUserId;
- $('#boardColumns').value=String(data.settings.boardColumns||'auto');
- $('#pinSelfFirst').checked=data.settings.pinSelfFirst!==false;
- const vis=new Set((data.settings.visibleEmployeeIds||[]).map(String));
- $('#employeeLayoutList').innerHTML=profileOrderedEmployees().map(e=>profileEmployeeRow(e,vis.has(String(e.id)))).join('');
- setupProfileLayoutInteractions();$('#profileDialog').showModal();
+function syncOrderFromBoard(){
+ const visibleOrder=[...document.querySelectorAll('#board .employee-card[data-employee-id]')].map(c=>String(c.dataset.employeeId));
+ const rest=(data.settings.employeeOrder||[]).map(String).filter(id=>!visibleOrder.includes(id));
+ data.settings.employeeOrder=[...visibleOrder,...rest];
 }
+function openLayoutEditor(){
+ if(currentView!=='board'){currentView='board';render();}
+ layoutEditSnapshot=JSON.parse(JSON.stringify(data.settings));layoutEditMode=true;
+ document.body.classList.add('layout-editor-open');
+ $('#layoutEditor').classList.add('open');$('#layoutEditor').setAttribute('aria-hidden','false');$('#layoutEditorBackdrop').hidden=false;
+ const deps=[...new Set(data.employees.map(e=>e.department).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ja'));
+ $('#layoutDepartmentFilter').innerHTML='<option value="">すべての部署</option>'+deps.map(x=>`<option>${esc(x)}</option>`).join('');
+ $('#layoutBoardColumns').value=String(data.settings.boardColumns||'auto');
+ render();renderLayoutMemberList();
+}
+function closeLayoutEditor(saveChanges=false){
+ if(!saveChanges&&layoutEditSnapshot)data.settings=layoutEditSnapshot;
+ if(saveChanges){syncOrderFromBoard();data.settings.boardColumns=$('#layoutBoardColumns').value||'auto';save();showToast('この端末のレイアウトを保存しました。');}
+ layoutEditMode=false;layoutEditSnapshot=null;document.body.classList.remove('layout-editor-open');$('#layoutEditor').classList.remove('open');$('#layoutEditor').setAttribute('aria-hidden','true');$('#layoutEditorBackdrop').hidden=true;render();
+}
+function openProfile(){openLayoutEditor();}
 $('#profileBtn').addEventListener('click',openProfile);
-$('#saveProfileBtn').addEventListener('click',ev=>{
- ev.preventDefault();data.settings.currentUserId=$('#currentUserSelect').value;
- const rows=[...document.querySelectorAll('#employeeLayoutList .layout-employee-row')];
- data.settings.employeeOrder=rows.map(row=>String(row.dataset.id));
- data.settings.visibleEmployeeIds=rows.filter(row=>row.querySelector('input[type=checkbox]')?.checked).map(row=>String(row.dataset.id));
- data.settings.boardColumns=$('#boardColumns').value||'auto';
- data.settings.pinSelfFirst=$('#pinSelfFirst').checked;
- save();$('#profileDialog').close();render();showToast('表示レイアウトを保存しました。');
-});
+$('#closeLayoutEditorBtn')?.addEventListener('click',()=>closeLayoutEditor(false));
+$('#cancelLayoutEditorBtn')?.addEventListener('click',()=>closeLayoutEditor(false));
+$('#saveLayoutEditorBtn')?.addEventListener('click',()=>closeLayoutEditor(true));
+$('#layoutEditorBackdrop')?.addEventListener('click',()=>closeLayoutEditor(false));
+$('#layoutMemberSearch')?.addEventListener('input',renderLayoutMemberList);
+$('#layoutDepartmentFilter')?.addEventListener('change',renderLayoutMemberList);
+$('#layoutBoardColumns')?.addEventListener('change',ev=>{data.settings.boardColumns=ev.target.value||'auto';render();});
+// 旧ダイアログの保存処理は互換用
+$('#saveProfileBtn')?.addEventListener('click',ev=>{ev.preventDefault();data.settings.currentUserId=$('#currentUserSelect')?.value||data.settings.currentUserId;data.settings.boardColumns=$('#boardColumns')?.value||data.settings.boardColumns||'auto';data.settings.pinSelfFirst=$('#pinSelfFirst')?.checked!==false;save();$('#profileDialog')?.close();render();showToast('表示設定を保存しました。');});
 function renderStatusMaster(){
  const wrap=$('#statusMasterList'),rows=sortedStatuses(true);wrap.innerHTML=rows.map((s,i)=>`<div class="status-row ${s.active?'':'inactive'}">
    <span class="status-swatch" style="background:${s.color}"></span>
