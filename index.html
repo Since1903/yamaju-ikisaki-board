@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#3a9d74" />
   <title>山十 行先予定表</title>
-  <link rel="stylesheet" href="styles.css?v=4.4" />
+  <link rel="stylesheet" href="styles.css?v=5.0" />
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -146,10 +146,11 @@
   <dialog id="profileDialog" class="profile-modal">
     <form method="dialog" class="dialog-form">
       <div class="dialog-title"><div><div class="eyebrow">MY BOARD</div><h2>表示設定</h2></div><button type="button" value="cancel" class="icon-btn" aria-label="閉じる">×</button></div>
-      <p class="help">この端末で「自分」と、最初に表示したい社員を設定します。自分は常に左上に固定されます。</p>
-      <label>自分<select id="currentUserSelect"></select></label>
-      <fieldset><legend>表示する社員</legend><div id="visibleEmployees" class="employee-checks"></div></fieldset>
-      <div class="notice">※これは端末ごとの表示設定です。状態の追加・編集・色変更は「管理設定」から行えます。</div>
+      <p class="help">この端末の行先板に表示する社員・並び順・列数を自由に設定できます。社員はドラッグ、または ↑↓ ボタンで移動できます。</p>
+      <div class="two-col"><label>自分<select id="currentUserSelect"></select></label><label>カードの列数<select id="boardColumns"><option value="auto">自動</option><option value="1">1列</option><option value="2">2列</option><option value="3">3列</option><option value="4">4列</option><option value="5">5列</option><option value="6">6列</option></select></label></div>
+      <label class="check-line layout-pin-check"><input id="pinSelfFirst" type="checkbox"> 自分を先頭（左上）に固定する</label>
+      <fieldset class="layout-fieldset"><legend>表示する社員・配置</legend><div class="layout-toolbar"><button type="button" id="showAllEmployeesBtn" class="small-btn secondary">全員表示</button><button type="button" id="hideAllEmployeesBtn" class="small-btn secondary">全員非表示</button><span>☰ 並び順は上から順にカードへ反映</span></div><div id="employeeLayoutList" class="employee-layout-list"></div></fieldset>
+      <div class="notice">※設定はこの端末だけに保存されます。大型モニター・タブレット・各PCで別々の配置を設定できます。</div>
       <div class="dialog-actions"><button type="button" value="cancel" class="secondary">キャンセル</button><button type="button" id="saveProfileBtn" class="primary">保存</button></div>
     </form>
   </dialog>

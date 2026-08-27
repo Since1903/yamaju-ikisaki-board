@@ -1,4 +1,4 @@
-// Ver.4.6 multi-day full-day leave / holiday board / overlap priority / server + client fallback / multi-device sync
+// Ver.5.0 free board layout / multi-day full-day leave / holiday board / overlap priority / multi-device sync
 let supabaseClient=null;
 let authSession=null;
 let currentEmployeeProfile=null;
@@ -15,7 +15,7 @@ const MONITOR_REFRESH_MS=5000;
 const REALTIME_HEALTH_MS=30000;
 let departmentMasterRows=[];
 let jobTypeMasterRows=[];
-const APP_VERSION='4.4';
+const APP_VERSION='5.0';
 let lastScheduleProcessAt=0;
 const SCHEDULE_PROCESS_MIN_GAP_MS=4000;
 
@@ -73,9 +73,14 @@ async function loadRemoteEmployees(){
  if(!currentEmployeeProfile)throw new Error('このログインユーザーに社員情報が紐付いていません。管理者へ連絡してください。');
  const me=String(currentEmployeeProfile.id),valid=new Set(data.employees.map(e=>e.id));
  data.settings.currentUserId=me;
- const kept=(data.settings.visibleEmployeeIds||[]).filter(id=>valid.has(String(id))).map(String);
- data.settings.visibleEmployeeIds=kept.length?kept:data.employees.map(e=>e.id);
- if(!data.settings.visibleEmployeeIds.includes(me))data.settings.visibleEmployeeIds.unshift(me);
+ const oldVisible=Array.isArray(data.settings.visibleEmployeeIds)?data.settings.visibleEmployeeIds.map(String):[];
+ const kept=oldVisible.filter(id=>valid.has(id));
+ // 初回のみ全員表示。以後は「0名表示」も端末設定として尊重する。
+ data.settings.visibleEmployeeIds=Array.isArray(data.settings.visibleEmployeeIds)?kept:data.employees.map(e=>e.id);
+ const oldOrder=Array.isArray(data.settings.employeeOrder)?data.settings.employeeOrder.map(String):[];
+ const ordered=oldOrder.filter(id=>valid.has(id));
+ data.employees.forEach(e=>{if(!ordered.includes(e.id))ordered.push(e.id);});
+ data.settings.employeeOrder=ordered;
  remoteMode=true;
  const userLabel=document.querySelector('#loggedInUser');if(userLabel)userLabel.textContent=currentEmployeeProfile.name||authSession.user.email;
  const isAdmin=currentEmployeeProfile.role==='admin';
@@ -266,7 +271,7 @@ const seed={
   {id:'e3',name:'佐藤 花子',department:'管理部',occupation:'事務職',role:'',status:'会議',destination:'第2会議室',purpose:'社内会議',returnTime:'16:00',phone:'ng',direct:false,goHome:false,memo:''},
   {id:'e4',name:'田中 一郎',department:'工務',occupation:'現場職',role:'',status:'現場',destination:'○○マンション',purpose:'現調',returnTime:'17:00',phone:'later',direct:true,goHome:true,memo:''},
   {id:'e5',name:'山十 武',department:'住宅営業部',occupation:'営業職',role:'',status:'在席',destination:'本社',purpose:'',returnTime:'',phone:'ok',direct:false,goHome:false,memo:''}
- ],history:[],schedules:[],statuses:structuredClone(DEFAULT_STATUSES),settings:{currentUserId:'e1',visibleEmployeeIds:['e1','e2','e3','e4','e5']}
+ ],history:[],schedules:[],statuses:structuredClone(DEFAULT_STATUSES),settings:{currentUserId:'e1',visibleEmployeeIds:['e1','e2','e3','e4','e5'],employeeOrder:['e1','e2','e3','e4','e5'],boardColumns:'auto',pinSelfFirst:true}
 };
 let data=load();let currentView='board';
 const $=s=>document.querySelector(s);
@@ -274,6 +279,10 @@ function migrate(v){
  if(!v||!Array.isArray(v.employees))return structuredClone(seed);
  v.settings ||= {currentUserId:v.employees[0]?.id||'',visibleEmployeeIds:v.employees.map(e=>e.id)};
  v.settings.visibleEmployeeIds ||= v.employees.map(e=>e.id);v.settings.currentUserId ||= v.employees[0]?.id||'';
+ v.settings.employeeOrder=Array.isArray(v.settings.employeeOrder)?v.settings.employeeOrder.map(String):v.employees.map(e=>String(e.id));
+ v.settings.boardColumns=String(v.settings.boardColumns||'auto');
+ if(!['auto','1','2','3','4','5','6'].includes(v.settings.boardColumns))v.settings.boardColumns='auto';
+ if(typeof v.settings.pinSelfFirst!=='boolean')v.settings.pinSelfFirst=true;
  v.history ||= [];v.schedules ||= [];
  if(!Array.isArray(v.statuses)){
    const oldColors=v.settings.statusColors||{};
@@ -307,7 +316,15 @@ function renderFilters(){
  const sf=$('#statusFilter'),sv=sf.value;const filterNames=[...new Set([...sortedStatuses(true).map(s=>s.name),...data.employees.map(e=>e.status)])];sf.innerHTML='<option value="">すべての状態</option>'+filterNames.map(n=>`<option>${esc(n)}</option>`).join('');if(filterNames.includes(sv))sf.value=sv;
  $('#scheduleEmployee').innerHTML=data.employees.map(e=>`<option value="${e.id}">${esc(e.name)}（${esc(e.department)} / ${esc(e.occupation)}）</option>`).join('');
 }
-function orderedVisibleEmployees(){const ids=new Set(data.settings.visibleEmployeeIds||data.employees.map(e=>e.id));let list=data.employees.filter(e=>ids.has(e.id));const me=data.settings.currentUserId;list.sort((a,b)=>a.id===me?-1:b.id===me?1:0);return list}
+function orderedVisibleEmployees(){
+ const ids=new Set((data.settings.visibleEmployeeIds||[]).map(String));
+ const map=new Map(data.employees.map(e=>[String(e.id),e]));
+ const order=(data.settings.employeeOrder||[]).map(String).filter(id=>map.has(id));
+ data.employees.forEach(e=>{if(!order.includes(String(e.id)))order.push(String(e.id));});
+ let list=order.filter(id=>ids.has(id)).map(id=>map.get(id));
+ if(data.settings.pinSelfFirst){const me=String(data.settings.currentUserId||'');list.sort((a,b)=>a.id===me?-1:b.id===me?1:0);}
+ return list;
+}
 function defaultLocationForEmployee(e){
  const row=departmentMasterRows.find(d=>d.name===e?.department);
  const loc=String(row?.default_location||'').replace(/^'+|'+$/g,'').trim();
@@ -395,7 +412,10 @@ function render(){
 function renderBoard(board){
  const q=$('#searchInput').value.trim().toLowerCase(),dep=$('#departmentFilter').value,occ=$('#occupationFilter').value,st=$('#statusFilter').value;const base=orderedVisibleEmployees();
  const list=base.filter(e=>(!q||`${e.name} ${e.destination} ${e.purpose}`.toLowerCase().includes(q))&&(!dep||e.department===dep)&&(!occ||e.occupation===occ)&&(!st||e.status===st));
- board.className='board';board.innerHTML='';const t=$('#employeeCardTemplate');
+ board.className='board';
+ const cols=String(data.settings.boardColumns||'auto');
+ if(cols!=='auto'){board.classList.add('fixed-columns');board.style.setProperty('--board-cols',cols);}else{board.classList.remove('fixed-columns');board.style.removeProperty('--board-cols');}
+ board.innerHTML='';const t=$('#employeeCardTemplate');
  list.forEach(e=>{const n=t.content.cloneNode(true),card=n.querySelector('.employee-card'),sm=statusByName(e.status),bg=sm.color||'#fff',fg=contrast(bg);card.style.setProperty('--status-bg',bg);card.style.setProperty('--card-text',fg);n.querySelector('.employee-name').textContent=e.name;n.querySelector('.employee-meta').textContent=[e.department,e.occupation].filter(Boolean).join(' / ');n.querySelector('.status-pill').textContent=e.status;n.querySelector('.destination').textContent=sm.useDestination===false?'―':(e.destination||'―');n.querySelector('.purpose').textContent=e.purpose||' ';const shownReturn=(!sm.useReturn||e.goHome||!e.returnTime||e.returnTime==='00:00')?'―':e.returnTime;n.querySelector('.return-time').textContent=shownReturn;n.querySelector('.phone-status').textContent=phoneText(e.phone);const tags=n.querySelector('.tag-row');if(e.id===data.settings.currentUserId)tags.innerHTML+='<span class="tag">自分</span>';if(e.direct)tags.innerHTML+='<span class="tag">直行</span>';if(e.goHome)tags.innerHTML+='<span class="tag">直帰</span>';if(!sm.active)tags.innerHTML+='<span class="tag">停止中状態</span>';if(e.memo)tags.innerHTML+=`<span class="tag">${esc(e.memo)}</span>`;n.querySelector('.change-btn').addEventListener('click',()=>openEdit(e.id));const eraser=n.querySelector('.eraser-btn');if(e.id===data.settings.currentUserId){eraser.hidden=false;eraser.addEventListener('click',eraseMyStatus);}else eraser.remove();board.appendChild(n)});
  $('#summary').textContent=`表示 ${list.length}名 / 登録${data.employees.length}名`;if(!list.length)board.innerHTML='<div class="empty card">該当する社員がいません</div>';
 }
@@ -620,9 +640,45 @@ async function deleteMaster(type,id){const c=masterConfig(type),row=c.rows.find(
 async function moveMaster(type,id,delta){const c=masterConfig(type),rows=[...c.rows].sort((a,b)=>(a.sort_order||0)-(b.sort_order||0)||a.id-b.id),i=rows.findIndex(r=>Number(r.id)===Number(id)),j=i+delta;if(i<0||j<0||j>=rows.length)return;const a=rows[i],b=rows[j],ao=a.sort_order||i+1,bo=b.sort_order||j+1;try{const {error:e1}=await supabaseClient.from(c.table).update({sort_order:bo}).eq('id',a.id);if(e1)throw e1;const {error:e2}=await supabaseClient.from(c.table).update({sort_order:ao}).eq('id',b.id);if(e2)throw e2;await refreshMasters();}catch(err){console.error(err);alert(err.message||'並び替えに失敗しました。')}}
 $('#addDepartmentBtn')?.addEventListener('click',()=>openMasterEdit('department'));$('#addJobTypeBtn')?.addEventListener('click',()=>openMasterEdit('job'));
 
-function openProfile(){$('#currentUserSelect').innerHTML=data.employees.map(e=>`<option value="${e.id}">${esc(e.name)}（${esc(e.department)}）</option>`).join('');$('#currentUserSelect').value=data.settings.currentUserId;const vis=new Set(data.settings.visibleEmployeeIds);$('#visibleEmployees').innerHTML=data.employees.map(e=>`<label><input type="checkbox" value="${e.id}" ${vis.has(e.id)?'checked':''}> <span>${esc(e.name)} <small>${esc(e.department)}</small></span></label>`).join('');$('#profileDialog').showModal()}
+function profileOrderedEmployees(){
+ const map=new Map(data.employees.map(e=>[String(e.id),e]));
+ const order=(data.settings.employeeOrder||[]).map(String).filter(id=>map.has(id));
+ data.employees.forEach(e=>{if(!order.includes(e.id))order.push(e.id);});
+ return order.map(id=>map.get(id));
+}
+function profileEmployeeRow(e,visible){return `<div class="layout-employee-row" draggable="true" data-id="${esc(e.id)}"><button type="button" class="layout-drag-handle" title="ドラッグして移動" aria-label="${esc(e.name)}を並び替え">⋮⋮</button><label class="layout-visible-check"><input type="checkbox" ${visible?'checked':''}> <span><strong>${esc(e.name)}</strong><small>${esc(e.department)}${e.occupation?` / ${esc(e.occupation)}`:''}</small></span></label><div class="layout-move-buttons"><button type="button" class="small-btn secondary layout-up" title="上へ">↑</button><button type="button" class="small-btn secondary layout-down" title="下へ">↓</button></div></div>`;}
+function moveProfileLayoutRow(row,delta){if(!row)return;const parent=row.parentElement;if(delta<0&&row.previousElementSibling)parent.insertBefore(row,row.previousElementSibling);if(delta>0&&row.nextElementSibling)parent.insertBefore(row.nextElementSibling,row);}
+function setupProfileLayoutInteractions(){
+ const list=$('#employeeLayoutList');if(!list)return;let dragging=null;
+ list.querySelectorAll('.layout-employee-row').forEach(row=>{
+  row.addEventListener('dragstart',ev=>{dragging=row;row.classList.add('dragging');ev.dataTransfer.effectAllowed='move';ev.dataTransfer.setData('text/plain',row.dataset.id);});
+  row.addEventListener('dragend',()=>{row.classList.remove('dragging');dragging=null;});
+  row.addEventListener('dragover',ev=>{ev.preventDefault();if(!dragging||dragging===row)return;const rect=row.getBoundingClientRect();const after=ev.clientY>rect.top+rect.height/2;list.insertBefore(dragging,after?row.nextSibling:row);});
+  row.querySelector('.layout-up')?.addEventListener('click',()=>moveProfileLayoutRow(row,-1));
+  row.querySelector('.layout-down')?.addEventListener('click',()=>moveProfileLayoutRow(row,1));
+ });
+ $('#showAllEmployeesBtn')?.addEventListener('click',()=>list.querySelectorAll('input[type=checkbox]').forEach(x=>x.checked=true));
+ $('#hideAllEmployeesBtn')?.addEventListener('click',()=>list.querySelectorAll('input[type=checkbox]').forEach(x=>x.checked=false));
+}
+function openProfile(){
+ $('#currentUserSelect').innerHTML=data.employees.map(e=>`<option value="${e.id}">${esc(e.name)}（${esc(e.department)}）</option>`).join('');
+ $('#currentUserSelect').value=data.settings.currentUserId;
+ $('#boardColumns').value=String(data.settings.boardColumns||'auto');
+ $('#pinSelfFirst').checked=data.settings.pinSelfFirst!==false;
+ const vis=new Set((data.settings.visibleEmployeeIds||[]).map(String));
+ $('#employeeLayoutList').innerHTML=profileOrderedEmployees().map(e=>profileEmployeeRow(e,vis.has(String(e.id)))).join('');
+ setupProfileLayoutInteractions();$('#profileDialog').showModal();
+}
 $('#profileBtn').addEventListener('click',openProfile);
-$('#saveProfileBtn').addEventListener('click',ev=>{ev.preventDefault();data.settings.currentUserId=$('#currentUserSelect').value;const checked=[...document.querySelectorAll('#visibleEmployees input:checked')].map(x=>x.value);if(!checked.includes(data.settings.currentUserId))checked.unshift(data.settings.currentUserId);data.settings.visibleEmployeeIds=checked;save();$('#profileDialog').close();render()});
+$('#saveProfileBtn').addEventListener('click',ev=>{
+ ev.preventDefault();data.settings.currentUserId=$('#currentUserSelect').value;
+ const rows=[...document.querySelectorAll('#employeeLayoutList .layout-employee-row')];
+ data.settings.employeeOrder=rows.map(row=>String(row.dataset.id));
+ data.settings.visibleEmployeeIds=rows.filter(row=>row.querySelector('input[type=checkbox]')?.checked).map(row=>String(row.dataset.id));
+ data.settings.boardColumns=$('#boardColumns').value||'auto';
+ data.settings.pinSelfFirst=$('#pinSelfFirst').checked;
+ save();$('#profileDialog').close();render();showToast('表示レイアウトを保存しました。');
+});
 function renderStatusMaster(){
  const wrap=$('#statusMasterList'),rows=sortedStatuses(true);wrap.innerHTML=rows.map((s,i)=>`<div class="status-row ${s.active?'':'inactive'}">
    <span class="status-swatch" style="background:${s.color}"></span>
