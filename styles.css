@@ -1,4 +1,4 @@
-:root{--brand:#3a9d74;--brand-dark:#2f7f60;--ink:#16211d;--muted:#6b7b74;--bg:#f4f7f6;--card:#fff;--line:#dde7e2;--shadow:0 8px 28px rgba(30,70,52,.08)}
+:root{--brand:#3a9d74;--brand-dark:#2f7f60;--ink:#16211d;--muted:#64776f;--bg:#eef9f3;--card:#fbfffc;--line:#d5eadf;--shadow:0 8px 28px rgba(30,70,52,.08)}
 *{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:system-ui,-apple-system,"Segoe UI","Noto Sans JP",sans-serif;background:var(--bg);color:var(--ink)}body{padding-bottom:74px}button,input,select,textarea{font:inherit}button{cursor:pointer}
 .app-header{position:sticky;top:0;z-index:20;background:#fff;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:16px;padding:16px clamp(16px,4vw,42px)}.app-header h1{font-size:clamp(20px,3vw,30px);margin:2px 0}.eyebrow{font-size:11px;font-weight:800;letter-spacing:.18em;color:var(--brand)}.header-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .shell{max-width:1440px;margin:auto;padding:20px clamp(12px,3vw,34px) 24px}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow)}
@@ -79,3 +79,11 @@ body.layout-editor-open .shell,body.layout-editor-open .app-header,body.layout-e
 .layout-card-editor.self-fixed{background:#173f36;cursor:default}
 .layout-card-fixed{font-size:12px;font-weight:800;display:flex;align-items:center;gap:5px;padding-left:4px}
 .layout-card-self{font-size:11px;font-weight:800;padding:3px 8px;border-radius:999px;background:rgba(255,255,255,.16)}
+
+/* Ver.5.1.6 light-green theme */
+.app-header{background:#e9f8ef}
+.toolbar{background:#f7fff9}
+.bottom-nav{background:rgba(239,250,244,.97)}
+.dialog-form{background:#fafffb}
+.layout-editor{background:#f7fff9}
+.holiday-board-card{background:#fbfffc}
