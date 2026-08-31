@@ -1,4 +1,4 @@
-// Ver.5.1.6 self-always-top-left / sidebar self-first / board-interactive layout editor / multi-day full-day leave / holiday board / overlap priority / multi-device sync
+// Ver.5.1.7 holiday-board filters / login example update / self-always-top-left / multi-day full-day leave / overlap priority / multi-device sync
 let supabaseClient=null;
 let authSession=null;
 let currentEmployeeProfile=null;
@@ -410,7 +410,9 @@ function holidayScheduleRows(){
 }
 function render(){
  renderFilters();document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.view===currentView));
- const toolbar=document.querySelector('.toolbar');if(toolbar)toolbar.hidden=currentView==='holiday';
+ // Ver.5.1.7: 休み掲示板でも行先板と同じ絞り込み欄を表示する。
+ const toolbar=document.querySelector('.toolbar');if(toolbar)toolbar.hidden=false;
+ const search=$('#searchInput');if(search)search.placeholder=currentView==='holiday'?'社員名・休みの種類を検索':'社員名・行先・用件を検索';
  const board=$('#board');if(currentView==='holiday')return renderHolidayBoard(board);if(currentView==='history')return renderHistory(board);if(currentView==='schedule')return renderSchedules(board);renderBoard(board)
 }
 function renderBoard(board){
@@ -424,8 +426,16 @@ function renderBoard(board){
  $('#summary').textContent=`表示 ${list.length}名 / 登録${data.employees.length}名`;if(!list.length)board.innerHTML='<div class="empty card">該当する社員がいません</div>';
 }
 function renderHolidayBoard(board){
- const rows=holidayScheduleRows();board.className='holiday-board';
- board.innerHTML=`<section class="holiday-board-card card"><div class="holiday-board-head"><div><div class="eyebrow">HOLIDAY BOARD</div><h2>休み掲示板</h2></div><span class="holiday-count">${rows.length}件</span></div><div class="holiday-table"><div class="holiday-row holiday-header"><span>日付</span><span>休みの種類</span><span>時間</span><span>氏名</span></div>${rows.length?rows.map(s=>{const e=data.employees.find(x=>x.id===s.employeeId);const kind=s.status===LEGACY_HOLIDAY_STATUS?'全休':s.status;return `<div class="holiday-row"><strong class="holiday-date">${esc(holidayDateRangeLabel(s))}</strong><span class="holiday-kind">${esc(kind)}</span><span class="holiday-time">${esc(holidayTimeLabel(s))}</span><strong class="holiday-name">${esc(e?.name||'不明')}</strong></div>`}).join(''):'<div class="holiday-empty">登録されている休み予定はありません。</div>'}</div></section>`;
+ // Ver.5.1.7: 行先板の検索・部署・職種・状態フィルターを休み掲示板にも連動。
+ const q=$('#searchInput').value.trim().toLowerCase(),dep=$('#departmentFilter').value,occ=$('#occupationFilter').value,st=$('#statusFilter').value;
+ const rows=holidayScheduleRows().filter(s=>{
+  const e=data.employees.find(x=>String(x.id)===String(s.employeeId));
+  const kind=s.status===LEGACY_HOLIDAY_STATUS?'全休':s.status;
+  const hay=`${e?.name||''} ${e?.department||''} ${e?.occupation||''} ${kind} ${s.purpose||''} ${s.memo||''}`.toLowerCase();
+  return (!q||hay.includes(q))&&(!dep||e?.department===dep)&&(!occ||e?.occupation===occ)&&(!st||kind===st||s.status===st);
+ });
+ board.className='holiday-board';
+ board.innerHTML=`<section class="holiday-board-card card"><div class="holiday-board-head"><div><div class="eyebrow">HOLIDAY BOARD</div><h2>休み掲示板</h2></div><span class="holiday-count">${rows.length}件</span></div><div class="holiday-table"><div class="holiday-row holiday-header"><span>日付</span><span>休みの種類</span><span>時間</span><span>氏名</span></div>${rows.length?rows.map(s=>{const e=data.employees.find(x=>String(x.id)===String(s.employeeId));const kind=s.status===LEGACY_HOLIDAY_STATUS?'全休':s.status;return `<div class="holiday-row"><strong class="holiday-date">${esc(holidayDateRangeLabel(s))}</strong><span class="holiday-kind">${esc(kind)}</span><span class="holiday-time">${esc(holidayTimeLabel(s))}</span><strong class="holiday-name">${esc(e?.name||'不明')}</strong></div>`}).join(''):'<div class="holiday-empty">絞り込み条件に該当する休み予定はありません。</div>'}</div></section>`;
  $('#summary').textContent=`休み予定 ${rows.length}件`;
 }
 function renderHistory(board){
